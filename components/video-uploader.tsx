@@ -55,10 +55,10 @@ export function VideoUploader({
       <div
         {...getRootProps()}
         className={cn(
-          "relative border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-all",
-          isDragActive && "border-blue-500 bg-blue-50",
+          "relative border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all bg-white/80 backdrop-blur-sm",
+          isDragActive && "border-purple-500 bg-purple-50",
           isUploading && "opacity-50 cursor-not-allowed",
-          !isDragActive && !isUploading && "border-gray-300 hover:border-gray-400"
+          !isDragActive && !isUploading && "border-gray-300 hover:border-purple-400 hover:bg-gray-50"
         )}
       >
         <input {...getInputProps()} />
@@ -66,24 +66,24 @@ export function VideoUploader({
         <div className="flex flex-col items-center space-y-4">
           {selectedFile ? (
             <>
-              <Video className="w-16 h-16 text-blue-500" />
+              <Video className="w-16 h-16 text-purple-500" />
               <div>
                 <p className="text-lg font-medium text-gray-900">
                   {selectedFile.name}
                 </p>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-600">
                   {formatFileSize(selectedFile.size)}
                 </p>
               </div>
             </>
           ) : (
             <>
-              <Upload className="w-16 h-16 text-gray-400" />
+              <Upload className="w-16 h-16 text-purple-500" />
               <div>
                 <p className="text-lg font-medium text-gray-900">
                   {isDragActive ? 'Drop your video here' : 'Drop video here or click to browse'}
                 </p>
-                <p className="text-sm text-gray-500 mt-2">
+                <p className="text-sm text-gray-600 mt-2">
                   Supported: MP4, MOV, AVI, MKV, WebM (max {Math.round(maxSizeMB/1024)}GB)
                 </p>
               </div>
@@ -93,8 +93,8 @@ export function VideoUploader({
       </div>
 
       {error && (
-        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-2">
-          <AlertCircle className="w-5 h-5 text-red-500 mt-0.5" />
+        <div className="mt-4 p-4 bg-red-50 border border-red-300 rounded-lg flex items-start space-x-2">
+          <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
           <p className="text-sm text-red-700">{error}</p>
         </div>
       )}

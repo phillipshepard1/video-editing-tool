@@ -117,58 +117,58 @@ export function WorkflowManagerV2({
         <Button
           onClick={() => setCurrentStep(1)}
           variant={currentStep === 1 ? "default" : "outline"}
-          className={`${currentStep === 1 ? 'bg-green-600 hover:bg-green-700 text-white' : ''}`}
+          className={`cursor-pointer ${currentStep === 1 ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-900 border-gray-300'}`}
         >
           Step 1: Clusters
         </Button>
-        <ChevronRight className="w-4 h-4 self-center text-gray-400" />
+        <ChevronRight className="w-4 h-4 self-center text-gray-500" />
         <Button
           onClick={() => setCurrentStep(2)}
           variant={currentStep === 2 ? "default" : "outline"}
-          className={`${currentStep === 2 ? 'bg-green-600 hover:bg-green-700 text-white' : ''}`}
+          className={`cursor-pointer ${currentStep === 2 ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-900 border-gray-300'}`}
         >
           Step 2: Filters
         </Button>
-        <ChevronRight className="w-4 h-4 self-center text-gray-400" />
+        <ChevronRight className="w-4 h-4 self-center text-gray-500" />
         <Button
           onClick={() => setCurrentStep(3)}
           variant={currentStep === 3 ? "default" : "outline"}
-          className={`${currentStep === 3 ? 'bg-green-600 hover:bg-green-700 text-white' : ''}`}
+          className={`cursor-pointer ${currentStep === 3 ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-900 border-gray-300'}`}
         >
           Step 3: Export
         </Button>
       </div>
 
       {/* Analysis Complete Header - Matching Screenshot */}
-      <Card className="border-gray-300 shadow-sm">
+      <Card className="bg-white border-gray-200 shadow-xl">
         <div className="p-4">
           <div className="flex justify-between items-center mb-3">
-            <h3 className="font-semibold text-gray-700">Analysis Complete</h3>
+            <h3 className="font-semibold text-gray-900">Analysis Complete</h3>
             <Button
               onClick={onNewAnalysis}
               variant="outline"
               size="sm"
-              className="text-gray-600"
+              className="text-gray-900 bg-white hover:bg-gray-50 border-gray-300 cursor-pointer"
             >
               🔄 New Analysis
             </Button>
           </div>
           <div className="grid grid-cols-4 gap-4 text-sm">
             <div>
-              <p className="text-gray-500">Original Duration</p>
-              <p className="text-xl font-mono font-bold">{formatTime(originalDuration)}</p>
+              <p className="text-gray-600">Original Duration</p>
+              <p className="text-xl font-mono font-bold text-gray-900">{formatTime(originalDuration)}</p>
             </div>
             <div>
-              <p className="text-gray-500">Final Duration</p>
-              <p className="text-xl font-mono font-bold">{formatTime(finalDuration)}</p>
+              <p className="text-gray-600">Final Duration</p>
+              <p className="text-xl font-mono font-bold text-gray-900">{formatTime(finalDuration)}</p>
             </div>
             <div>
-              <p className="text-gray-500">Time Removed</p>
+              <p className="text-gray-600">Time Removed</p>
               <p className="text-xl font-mono font-bold text-red-600">{formatTime(timeRemoved)}</p>
             </div>
             <div>
-              <p className="text-gray-500">Segments Found</p>
-              <p className="text-xl font-mono font-bold">{segments.length}</p>
+              <p className="text-gray-600">Segments Found</p>
+              <p className="text-xl font-mono font-bold text-gray-900">{segments.length}</p>
             </div>
           </div>
         </div>
@@ -176,28 +176,28 @@ export function WorkflowManagerV2({
 
       {/* Export Options - Always Visible */}
       {currentStep === 3 ? (
-        <Card className="border-gray-300 shadow-sm">
+        <Card className="bg-white border-gray-200 shadow-xl">
           <div className="p-4">
-            <h3 className="font-semibold text-gray-700 mb-3">Export Options</h3>
+            <h3 className="font-semibold text-gray-900 mb-3">Export Options</h3>
             <div className="flex gap-3">
               <Button
                 onClick={() => onExport('edl', finalSegmentsToRemove)}
                 variant="outline"
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 cursor-pointer bg-white hover:bg-gray-50 text-gray-900 border-gray-300"
               >
                 📄 Export EDL
               </Button>
               <Button
                 onClick={() => onExport('fcpxml', finalSegmentsToRemove)}
                 variant="outline"
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 cursor-pointer bg-white hover:bg-gray-50 text-gray-900 border-gray-300"
               >
                 📄 Export FCPXML
               </Button>
               <Button
                 onClick={() => onExport('premiere', finalSegmentsToRemove)}
                 variant="outline"
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 cursor-pointer bg-white hover:bg-gray-50 text-gray-900 border-gray-300"
               >
                 🎬 Export Premiere XML
               </Button>
@@ -205,10 +205,10 @@ export function WorkflowManagerV2({
           </div>
         </Card>
       ) : (
-        <Card className="border-gray-300 shadow-sm">
+        <Card className="bg-white border-gray-200 shadow-xl">
           <div className="p-4">
-            <h3 className="font-semibold text-gray-700 mb-3">Export Options</h3>
-            <p className="text-sm text-gray-500">Complete all steps to enable export</p>
+            <h3 className="font-semibold text-gray-900 mb-3">Export Options</h3>
+            <p className="text-sm text-gray-600">Complete all steps to enable export</p>
           </div>
         </Card>
       )}

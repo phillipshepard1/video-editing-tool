@@ -77,13 +77,13 @@ export function ClusterPanel({
     <div className="grid grid-cols-12 gap-4">
       {/* Left Panel - Cluster List */}
       <div className="col-span-3">
-        <Card>
+        <Card className="bg-white border-gray-200 shadow-lg">
           <CardHeader>
-            <CardTitle className="text-lg flex items-center">
+            <CardTitle className="text-lg flex items-center text-gray-900">
               <span className="mr-2">🎬</span>
               Detected Clusters
             </CardTitle>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-600 mt-1">
               {clusters.length} cluster groups found
             </p>
           </CardHeader>
@@ -97,21 +97,21 @@ export function ClusterPanel({
                   key={cluster.id}
                   className={`p-3 rounded-lg border cursor-pointer transition-all ${
                     isSelected
-                      ? 'border-green-500 bg-green-50'
-                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      ? 'border-purple-500 bg-purple-50'
+                      : 'border-gray-300 hover:border-purple-400 hover:bg-gray-50'
                   }`}
                   onClick={() => setSelectedCluster(cluster)}
                 >
-                  <div className="font-semibold text-sm">{cluster.name}</div>
-                  <div className="text-xs text-gray-500">
+                  <div className="font-semibold text-sm text-gray-900">{cluster.name}</div>
+                  <div className="text-xs text-gray-600">
                     {cluster.attempts.length} attempts • {cluster.timeRange.start} - {cluster.timeRange.end}
                   </div>
                   {selection && (
                     <div className="text-xs mt-1">
                       {selection.selectedWinner === 'gap' ? (
-                        <span className="text-green-600">✓ Winner selected</span>
+                        <span className="text-green-400">✓ Winner selected</span>
                       ) : (
-                        <span className="text-yellow-600">⚠️ Needs review</span>
+                        <span className="text-yellow-400">⚠️ Needs review</span>
                       )}
                     </div>
                   )}
@@ -120,7 +120,7 @@ export function ClusterPanel({
             })}
             
             <div className="pt-3 mt-3 border-t">
-              <Button className="w-full bg-green-500 hover:bg-green-600">
+              <Button className="w-full bg-purple-600 hover:bg-purple-700 text-white cursor-pointer">
                 Accept All Selections
               </Button>
             </div>
@@ -131,28 +131,28 @@ export function ClusterPanel({
       {/* Center - Cluster Details */}
       <div className="col-span-5">
         {selectedCluster ? (
-          <Card>
+          <Card className="bg-white border-gray-200 shadow-lg">
             <CardHeader>
-              <CardTitle className="text-lg">
+              <CardTitle className="text-lg text-gray-900">
                 Cluster: {selectedCluster.name}
               </CardTitle>
             </CardHeader>
             <CardContent>
               {/* Failed Attempts */}
               <div className="mb-4">
-                <h3 className="text-sm font-semibold text-red-600 mb-2">
+                <h3 className="text-sm font-semibold text-red-400 mb-2">
                   ❌ FAILED ATTEMPTS (TO REMOVE):
                 </h3>
                 <div className="space-y-2">
                   {selectedCluster.attempts.map((attempt, index) => (
                     <div
                       key={attempt.id}
-                      className="p-3 bg-red-50 border border-red-200 rounded-lg relative"
+                      className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg relative"
                     >
-                      <Badge className="absolute top-2 right-2 bg-red-100 text-red-700">
+                      <Badge className="absolute top-2 right-2 bg-red-500/20 text-red-400">
                         Remove
                       </Badge>
-                      <div className="font-semibold text-sm">
+                      <div className="font-semibold text-sm text-gray-900">
                         Take {index + 1} • {attempt.startTime} - {attempt.endTime} ({attempt.duration.toFixed(1)}s)
                       </div>
                       <div className="text-xs text-gray-600 mt-1">
@@ -161,7 +161,7 @@ export function ClusterPanel({
                       <Button
                         size="sm"
                         variant="outline"
-                        className="mt-2"
+                        className="mt-2 cursor-pointer bg-white hover:bg-gray-50 text-gray-900 border-gray-300"
                         onClick={() => handlePreviewTake(attempt)}
                       >
                         Preview
@@ -174,14 +174,14 @@ export function ClusterPanel({
               {/* Winning Take */}
               {selectedCluster.winner && (
                 <div>
-                  <h3 className="text-sm font-semibold text-green-600 mb-2">
+                  <h3 className="text-sm font-semibold text-green-400 mb-2">
                     ✅ WINNING TAKE (TO KEEP):
                   </h3>
-                  <div className="p-3 bg-green-50 border-2 border-green-300 rounded-lg relative">
-                    <Badge className="absolute top-2 right-2 bg-green-100 text-green-700">
+                  <div className="p-3 bg-green-500/10 border-2 border-green-500/30 rounded-lg relative">
+                    <Badge className="absolute top-2 right-2 bg-green-500/20 text-green-400">
                       Keep
                     </Badge>
-                    <div className="font-semibold text-sm">
+                    <div className="font-semibold text-sm text-gray-900">
                       Take {selectedCluster.attempts.length + 1} • {selectedCluster.winner.startTime} - {selectedCluster.winner.endTime}
                     </div>
                     <div className="text-xs text-gray-600 mt-1">
@@ -190,7 +190,7 @@ export function ClusterPanel({
                     <Button
                       size="sm"
                       variant="outline"
-                      className="mt-2"
+                      className="mt-2 cursor-pointer bg-white hover:bg-gray-50 text-gray-900 border-gray-300"
                       onClick={() => handlePreviewTake('winner')}
                     >
                       Preview Winner
@@ -203,6 +203,7 @@ export function ClusterPanel({
               <div className="flex gap-2 mt-4">
                 <Button
                   variant="outline"
+                  className="cursor-pointer bg-white hover:bg-gray-50 text-gray-900 border-gray-300"
                   onClick={() => {
                     // Logic to select different winner
                   }}
@@ -210,7 +211,7 @@ export function ClusterPanel({
                   Select Different Winner
                 </Button>
                 <Button
-                  className="bg-green-500 hover:bg-green-600"
+                  className="bg-purple-600 hover:bg-purple-700 text-white cursor-pointer"
                   onClick={() => handleSelectWinner(selectedCluster.id, 'gap')}
                 >
                   Accept Selection
@@ -219,8 +220,8 @@ export function ClusterPanel({
             </CardContent>
           </Card>
         ) : (
-          <Card>
-            <CardContent className="text-center py-8 text-gray-500">
+          <Card className="bg-white border-gray-200 shadow-lg">
+            <CardContent className="text-center py-8 text-gray-600">
               Select a cluster to view details
             </CardContent>
           </Card>
@@ -229,9 +230,9 @@ export function ClusterPanel({
 
       {/* Right - Video Preview */}
       <div className="col-span-4">
-        <Card>
+        <Card className="bg-white border-gray-200 shadow-lg">
           <CardHeader>
-            <CardTitle className="text-lg">Video Preview</CardTitle>
+            <CardTitle className="text-lg text-gray-900">Video Preview</CardTitle>
           </CardHeader>
           <CardContent>
             {videoUrl ? (

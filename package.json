@@ -24,7 +24,7 @@
     "@radix-ui/react-tabs": "^1.1.12",
     "@supabase/auth-helpers-nextjs": "^0.10.0",
     "@supabase/ssr": "^0.6.1",
-    "@supabase/supabase-js": "^2.54.0",
+    "@supabase/supabase-js": "^2.55.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
@@ -35,6 +35,7 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-dropzone": "^14.3.8",
+    "react-hot-toast": "^2.5.2",
     "tailwind-merge": "^3.3.1",
     "zustand": "^5.0.7"
   },

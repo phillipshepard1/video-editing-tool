@@ -13,6 +13,7 @@ import { formatTime, formatFileSize } from '@/lib/utils';
 import { EnhancedSegment, FilterState, createDefaultFilterState, SegmentCategory } from '@/lib/types/segments';
 import { needsCompression, compressVideoForAnalysis } from '@/lib/video-compression';
 import { generateFCPXML, generateEDL, generatePremiereXML, downloadFile } from '@/lib/export-formats';
+import AuthenticatedLayout from '@/components/AuthenticatedLayout';
 
 interface AnalysisResult {
   segmentsToRemove: EnhancedSegment[];
@@ -36,7 +37,7 @@ export default function Home() {
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [selectedSegment, setSelectedSegment] = useState<EnhancedSegment | null>(null);
   const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null!);
   const timelineRef = useRef<HTMLDivElement>(null);
   
   // Video playback state
@@ -278,17 +279,17 @@ export default function Home() {
 
     switch (format) {
       case 'edl':
-        content = generateEDL(selectedSegments, file.name, analysis.summary.originalDuration);
+        content = generateEDL(selectedSegments, analysis.summary.originalDuration, file.name);
         filename = `${file.name.replace(/\.[^/.]+$/, '')}_cuts.edl`;
         mimeType = 'text/plain';
         break;
       case 'fcpxml':
-        content = generateFCPXML(selectedSegments, file.name, analysis.summary.originalDuration);
+        content = generateFCPXML(selectedSegments, analysis.summary.originalDuration, file.name);
         filename = `${file.name.replace(/\.[^/.]+$/, '')}_cuts.fcpxml`;
         mimeType = 'application/xml';
         break;
       case 'premiere':
-        content = generatePremiereXML(selectedSegments, file.name, analysis.summary.originalDuration);
+        content = generatePremiereXML(selectedSegments, analysis.summary.originalDuration, file.name);
         filename = `${file.name.replace(/\.[^/.]+$/, '')}_cuts.xml`;
         mimeType = 'application/xml';
         break;
@@ -407,8 +408,9 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-gray-50 text-gray-800">
-      <div className="container mx-auto py-8 px-4 max-w-[1600px]">
+    <AuthenticatedLayout>
+      <main className="min-h-screen bg-gray-50 text-gray-800">
+        <div className="container mx-auto py-8 px-4 max-w-[1600px]">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-green-700 mb-2">
             AI VIDEO ANALYSIS
@@ -477,13 +479,13 @@ export default function Home() {
             videoDuration={videoDuration}
             onExport={(format, segmentsToRemove) => {
               if (format === 'edl') {
-                const content = generateEDL(segmentsToRemove, file?.name || 'video.mp4');
+                const content = generateEDL(segmentsToRemove, videoDuration, file?.name || 'video.mp4');
                 downloadFile(content, `${file?.name || 'video'}_edit.edl`, 'text/plain');
               } else if (format === 'fcpxml') {
-                const content = generateFCPXML(segmentsToRemove, file?.name || 'video.mp4', videoDuration);
+                const content = generateFCPXML(segmentsToRemove, videoDuration, file?.name || 'video.mp4');
                 downloadFile(content, `${file?.name || 'video'}_edit.fcpxml`, 'application/xml');
               } else if (format === 'premiere') {
-                const content = generatePremiereXML(segmentsToRemove, file?.name || 'video.mp4', videoDuration);
+                const content = generatePremiereXML(segmentsToRemove, videoDuration, file?.name || 'video.mp4');
                 downloadFile(content, `${file?.name || 'video'}_edit.xml`, 'application/xml');
               }
             }}
@@ -494,6 +496,7 @@ export default function Home() {
           />
         )}
       </div>
-    </main>
+      </main>
+    </AuthenticatedLayout>
   );
 }
