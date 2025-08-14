@@ -26,7 +26,7 @@ export interface EnhancedSegment {
   confidence: number;
   
   // Category can be old string format or new enum
-  category: SegmentCategory | 'pause' | 'filler' | 'redundant' | 'redundancy' | 'off-topic' | 'off_topic' | 'technical' | 'dead_air';
+  category: SegmentCategory | 'pause' | 'filler' | 'redundant' | 'redundancy' | 'off-topic' | 'off_topic' | 'technical' | 'dead_air' | 'false_start' | 'tangent';
   severity?: SeverityLevel;
   contextNote?: string; // e.g., "May be intentional for emphasis"
   alternativeSegment?: {

@@ -222,6 +222,9 @@ export default function DashboardPage() {
         id: `segment-${index}`,
         selected: true,
       }));
+      
+      console.log('Enhanced segments created:', enhancedSegments);
+      console.log('Categories:', enhancedSegments.map(s => `${s.startTime}: ${s.category}`));
 
       setAnalysis({
         segmentsToRemove: enhancedSegments,

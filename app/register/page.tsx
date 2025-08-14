@@ -18,8 +18,14 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [focusedField, setFocusedField] = useState<string | null>(null)
+  
+  // Add debug logging
+  console.log('RegisterPage: Rendering component')
+  
   const { signUp } = useAuth()
   const router = useRouter()
+  
+  console.log('RegisterPage: Component rendered successfully')
 
   const passwordRequirements = [
     { text: 'At least 8 characters', met: password.length >= 8 },

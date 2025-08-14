@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { TakeCluster, ClusterSelection } from '@/lib/clustering';
 import { EnhancedSegment } from '@/lib/types/segments';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Play, Pause, SkipBack, SkipForward, Check, X } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Check, X, CheckSquare, Square } from 'lucide-react';
 
 interface ClusterPanelProps {
   clusters: TakeCluster[];
@@ -29,6 +29,12 @@ export function ClusterPanel({
     clusters.length > 0 ? clusters[0] : null
   );
   const [previewingTake, setPreviewingTake] = useState<number | 'winner' | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [previewTimeoutId, setPreviewTimeoutId] = useState<NodeJS.Timeout | null>(null);
+  const [showBuffer, setShowBuffer] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [clipBounds, setClipBounds] = useState<{ start: number; end: number } | null>(null);
 
   const handleSelectWinner = (clusterId: string, winnerIndex: number | 'gap') => {
     const cluster = clusters.find(c => c.id === clusterId);
@@ -47,17 +53,65 @@ export function ClusterPanel({
   const handlePreviewTake = async (take: EnhancedSegment | 'winner') => {
     if (!videoRef.current) return;
 
+    // Clear any existing timeout
+    if (previewTimeoutId) {
+      clearTimeout(previewTimeoutId);
+      setPreviewTimeoutId(null);
+    }
+
+    let startTime: number;
+    let endTime: number;
+
     if (take === 'winner' && selectedCluster?.winner) {
-      const startTime = parseTimeToSeconds(selectedCluster.winner.startTime);
-      videoRef.current.currentTime = startTime;
-      await videoRef.current.play();
+      startTime = parseTimeToSeconds(selectedCluster.winner.startTime);
+      endTime = parseTimeToSeconds(selectedCluster.winner.endTime);
       setPreviewingTake('winner');
     } else if (take !== 'winner') {
-      const startTime = parseTimeToSeconds(take.startTime);
-      videoRef.current.currentTime = startTime;
-      await videoRef.current.play();
+      startTime = parseTimeToSeconds(take.startTime);
+      endTime = parseTimeToSeconds(take.endTime);
       const takeIndex = selectedCluster?.attempts.findIndex(a => a.id === take.id) ?? -1;
       setPreviewingTake(takeIndex);
+    } else {
+      return;
+    }
+
+    // Store clip boundaries for markers
+    setClipBounds({ start: startTime, end: endTime });
+
+    // Apply buffer if enabled
+    const previewStartTime = showBuffer ? Math.max(0, startTime - 3) : startTime;
+    const previewEndTime = showBuffer ? endTime + 3 : endTime;
+    const previewDuration = (previewEndTime - previewStartTime) * 1000; // Convert to milliseconds
+
+    videoRef.current.currentTime = previewStartTime;
+    await videoRef.current.play();
+    setIsPlaying(true);
+
+    // Set timeout to pause the video after the preview duration
+    const timeoutId = setTimeout(() => {
+      if (videoRef.current) {
+        videoRef.current.pause();
+        setIsPlaying(false);
+      }
+    }, previewDuration);
+    
+    setPreviewTimeoutId(timeoutId);
+  };
+
+  const handlePlayPause = () => {
+    if (!videoRef.current) return;
+    
+    if (isPlaying) {
+      videoRef.current.pause();
+      setIsPlaying(false);
+      // Clear timeout if pausing manually
+      if (previewTimeoutId) {
+        clearTimeout(previewTimeoutId);
+        setPreviewTimeoutId(null);
+      }
+    } else {
+      videoRef.current.play();
+      setIsPlaying(true);
     }
   };
 
@@ -67,6 +121,65 @@ export function ClusterPanel({
       return parseInt(parts[0]) * 60 + parseFloat(parts[1]);
     }
     return parseFloat(timeStr);
+  };
+
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Cleanup timeout on unmount or when component updates
+  useEffect(() => {
+    return () => {
+      if (previewTimeoutId) {
+        clearTimeout(previewTimeoutId);
+      }
+    };
+  }, [previewTimeoutId]);
+
+  // Update playing state based on video events
+  useEffect(() => {
+    if (!videoRef.current) return;
+
+    const video = videoRef.current;
+    
+    const handlePlay = () => setIsPlaying(true);
+    const handlePause = () => setIsPlaying(false);
+    const handleEnded = () => setIsPlaying(false);
+    const handleTimeUpdate = () => setCurrentTime(video.currentTime);
+    const handleLoadedMetadata = () => setDuration(video.duration);
+
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
+    video.addEventListener('ended', handleEnded);
+    video.addEventListener('timeupdate', handleTimeUpdate);
+    video.addEventListener('loadedmetadata', handleLoadedMetadata);
+
+    // Set initial duration if video is already loaded
+    if (video.duration) {
+      setDuration(video.duration);
+    }
+
+    return () => {
+      video.removeEventListener('play', handlePlay);
+      video.removeEventListener('pause', handlePause);
+      video.removeEventListener('ended', handleEnded);
+      video.removeEventListener('timeupdate', handleTimeUpdate);
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+    };
+  }, [videoRef.current]);
+
+  const handleScrub = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!videoRef.current || !duration) return;
+    
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percentage = x / rect.width;
+    const newTime = percentage * duration;
+    
+    videoRef.current.currentTime = newTime;
+    setCurrentTime(newTime);
   };
 
   const currentSelection = selectedCluster 
@@ -246,6 +359,64 @@ export function ClusterPanel({
                   />
                 </div>
                 
+                {/* Video Scrubber */}
+                <div className="mb-3">
+                  <div 
+                    className="relative h-2 bg-gray-200 rounded-full cursor-pointer"
+                    onClick={handleScrub}
+                  >
+                    {/* Progress bar */}
+                    <div 
+                      className="absolute h-full bg-blue-500 rounded-full"
+                      style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}
+                    />
+                    
+                    {/* Clip start marker */}
+                    {clipBounds && duration && (
+                      <>
+                        <div 
+                          className="absolute top-1/2 -translate-y-1/2 w-0.5 h-4 bg-green-500"
+                          style={{ left: `${(clipBounds.start / duration) * 100}%` }}
+                          title="Clip Start"
+                        />
+                        {/* Clip end marker */}
+                        <div 
+                          className="absolute top-1/2 -translate-y-1/2 w-0.5 h-4 bg-red-500"
+                          style={{ left: `${(clipBounds.end / duration) * 100}%` }}
+                          title="Clip End"
+                        />
+                      </>
+                    )}
+                    
+                    {/* Scrubber handle */}
+                    <div 
+                      className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full"
+                      style={{ left: `${duration ? (currentTime / duration) * 100 : 0}%` }}
+                    />
+                  </div>
+                  
+                  {/* Time display */}
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>{formatTime(currentTime)}</span>
+                    <span>{formatTime(duration)}</span>
+                  </div>
+                </div>
+                
+                {/* Buffer preview checkbox */}
+                <div className="flex items-center gap-2 mb-3">
+                  <button
+                    onClick={() => setShowBuffer(!showBuffer)}
+                    className="flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900"
+                  >
+                    {showBuffer ? (
+                      <CheckSquare className="w-4 h-4" />
+                    ) : (
+                      <Square className="w-4 h-4" />
+                    )}
+                    Show 3-second buffer preview
+                  </button>
+                </div>
+                
                 {selectedCluster && (
                   <>
                     <div className="text-xs text-gray-500 mb-2">Comparing Takes:</div>
@@ -288,9 +459,16 @@ export function ClusterPanel({
                     <SkipBack className="w-4 h-4 mr-1" />
                     Previous
                   </Button>
-                  <Button size="sm" className="flex-1 bg-green-500 hover:bg-green-600">
-                    <Play className="w-4 h-4 mr-1" />
-                    Play
+                  <Button 
+                    size="sm" 
+                    className="flex-1 bg-green-500 hover:bg-green-600"
+                    onClick={handlePlayPause}
+                  >
+                    {isPlaying ? (
+                      <><Pause className="w-4 h-4 mr-1" />Pause</>
+                    ) : (
+                      <><Play className="w-4 h-4 mr-1" />Play</>
+                    )}
                   </Button>
                   <Button size="sm" variant="outline" className="flex-1">
                     Next

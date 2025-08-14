@@ -41,7 +41,14 @@ export function WorkflowManagerV2({
 
   // Detect clusters on mount
   useEffect(() => {
+    console.log('WorkflowManagerV2 received segments:', segments);
+    console.log('Segment count:', segments.length);
+    if (segments.length > 0) {
+      console.log('First segment category:', segments[0].category);
+      console.log('Segments with false_start:', segments.filter(s => s.category === 'false_start').length);
+    }
     const detectedClusters = detectClusters(segments);
+    console.log('Detected clusters:', detectedClusters);
     setClusters(detectedClusters);
     
     // Initialize cluster selections with defaults
@@ -252,6 +259,7 @@ export function WorkflowManagerV2({
           onExport={onExport}
           videoUrl={videoUrl}
           videoRef={videoRef}
+          videoDuration={videoDuration}
         />
       )}
     </div>

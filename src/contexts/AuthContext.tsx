@@ -26,13 +26,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Check active session
     const checkSession = async () => {
+      console.log('AuthContext: Starting session check...')
       try {
-        const { data: { session } } = await supabase.auth.getSession()
+        console.log('AuthContext: Getting session from Supabase...')
+        const { data: { session }, error } = await supabase.auth.getSession()
+        console.log('AuthContext: Session result:', { session: !!session, error })
+        
+        if (error) {
+          console.error('AuthContext: Session check error:', error)
+        }
+        
         setSession(session)
         setUser(session?.user ?? null)
       } catch (error) {
-        console.error('Error checking session:', error)
+        console.error('AuthContext: Error checking session:', error)
       } finally {
+        console.log('AuthContext: Setting loading to false')
         setLoading(false)
       }
     }
@@ -41,6 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      console.log('AuthContext: Auth state changed:', _event, !!session)
       setSession(session)
       setUser(session?.user ?? null)
       setLoading(false)

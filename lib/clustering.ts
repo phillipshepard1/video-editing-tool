@@ -94,6 +94,8 @@ export function detectClusters(segments: EnhancedSegment[]): TakeCluster[] {
     parseTime(a.startTime) - parseTime(b.startTime)
   );
   
+  console.log('detectClusters: Analyzing', sorted.length, 'segments');
+  
   let currentCluster: EnhancedSegment[] = [];
   let clusterStart = '';
   
@@ -108,6 +110,8 @@ export function detectClusters(segments: EnhancedSegment[]): TakeCluster[] {
       segment.reason.toLowerCase().includes('try again') ||
       segment.reason.toLowerCase().includes('false start') ||
       segment.reason.toLowerCase().includes('multiple attempts');
+    
+    console.log(`Segment ${i}: category="${segment.category}", reason="${segment.reason}", isRetake=${isRetake}`);
     
     if (isRetake) {
       if (currentCluster.length === 0) {
@@ -174,6 +178,11 @@ export function detectClusters(segments: EnhancedSegment[]): TakeCluster[] {
   // Also detect clusters based on similar content even if not marked as false starts
   const similarityGroups = detectSimilarityGroups(sorted);
   clusters.push(...similarityGroups);
+  
+  console.log('detectClusters: Found', clusters.length, 'clusters total');
+  clusters.forEach((c, i) => {
+    console.log(`  Cluster ${i + 1}: ${c.name}, ${c.attempts.length} attempts, pattern: ${c.pattern}`);
+  });
   
   return clusters;
 }

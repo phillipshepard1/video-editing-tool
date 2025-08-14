@@ -4,7 +4,8 @@ import { EnhancedSegment } from '@/lib/types/segments';
 import { TakeCluster, ClusterSelection } from '@/lib/clustering';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Download, FileText, Film, FileCode } from 'lucide-react';
+import { Download, FileText, Film, FileCode, Video, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { useState } from 'react';
 
 interface FinalReviewPanelProps {
   finalSegmentsToRemove: EnhancedSegment[];
@@ -15,6 +16,7 @@ interface FinalReviewPanelProps {
   onExport: (format: 'edl' | 'fcpxml' | 'premiere', segmentsToRemove: EnhancedSegment[]) => void;
   videoUrl: string | null;
   videoRef: React.RefObject<HTMLVideoElement>;
+  videoDuration?: number;
 }
 
 export function FinalReviewPanel({
@@ -25,8 +27,14 @@ export function FinalReviewPanel({
   finalDuration,
   onExport,
   videoUrl,
-  videoRef
+  videoRef,
+  videoDuration
 }: FinalReviewPanelProps) {
+  const [renderStatus, setRenderStatus] = useState<'idle' | 'uploading' | 'rendering' | 'completed' | 'error'>('idle');
+  const [renderProgress, setRenderProgress] = useState(0);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null);
+  const [renderId, setRenderId] = useState<string | null>(null);
   const timeRemoved = originalDuration - finalDuration;
   const reductionPercentage = ((timeRemoved / originalDuration) * 100).toFixed(1);
   
@@ -37,6 +45,98 @@ export function FinalReviewPanel({
     const mins = Math.floor(seconds / 60);
     const secs = (seconds % 60).toFixed(0).padStart(2, '0');
     return `${mins.toString().padStart(2, '0')}:${secs}`;
+  };
+
+  const parseTimeToSeconds = (timeStr: string): number => {
+    const parts = timeStr.split(':');
+    if (parts.length === 2) {
+      return parseInt(parts[0]) * 60 + parseFloat(parts[1]);
+    }
+    return parseFloat(timeStr);
+  };
+
+  const handleRenderVideo = async () => {
+    if (!videoUrl) {
+      setRenderError('No video URL available');
+      return;
+    }
+
+    setRenderStatus('uploading');
+    setRenderError(null);
+    setRenderProgress(0);
+
+    try {
+      // Submit render job
+      const response = await fetch('/api/render/chillin', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          videoUrl,
+          segmentsToRemove: finalSegmentsToRemove,
+          videoDuration: videoDuration || originalDuration,
+          // These would ideally come from video metadata
+          videoWidth: 1920,
+          videoHeight: 1080,
+          fps: 30
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to submit render job');
+      }
+
+      setRenderId(result.renderId);
+      setRenderStatus('rendering');
+      setRenderProgress(10);
+
+      // Poll for status
+      let attempts = 0;
+      const maxAttempts = 60; // 5 minutes max
+      const pollInterval = 5000; // 5 seconds
+
+      const pollStatus = async () => {
+        if (attempts >= maxAttempts) {
+          throw new Error('Render timeout - please try again');
+        }
+
+        const statusResponse = await fetch(`/api/render/chillin?renderId=${result.renderId}`);
+        const statusResult = await statusResponse.json();
+
+        if (statusResult.status === 'completed' && statusResult.outputUrl) {
+          setRenderStatus('completed');
+          setRenderProgress(100);
+          setRenderedVideoUrl(statusResult.outputUrl);
+          
+          // Download the video
+          const link = document.createElement('a');
+          link.href = statusResult.outputUrl;
+          link.download = `edited_video_${Date.now()}.mp4`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          
+        } else if (statusResult.status === 'failed') {
+          throw new Error(statusResult.error || 'Render failed');
+        } else {
+          // Still processing
+          attempts++;
+          setRenderProgress(Math.min(90, 10 + (attempts * 80 / maxAttempts)));
+          setTimeout(pollStatus, pollInterval);
+        }
+      };
+
+      // Start polling
+      setTimeout(pollStatus, pollInterval);
+
+    } catch (error) {
+      console.error('Render error:', error);
+      setRenderStatus('error');
+      setRenderError(error instanceof Error ? error.message : 'Failed to render video');
+    }
   };
 
   return (
@@ -106,6 +206,66 @@ export function FinalReviewPanel({
                   <Film className="w-4 h-4 mr-2" />
                   Export Premiere XML
                 </Button>
+                
+                <div className="border-t mt-3 pt-3">
+                  <Button
+                    className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white"
+                    onClick={handleRenderVideo}
+                    disabled={renderStatus !== 'idle' && renderStatus !== 'completed' && renderStatus !== 'error'}
+                  >
+                    {renderStatus === 'idle' && (
+                      <>
+                        <Video className="w-4 h-4 mr-2" />
+                        Render Video
+                      </>
+                    )}
+                    {renderStatus === 'uploading' && (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Uploading...
+                      </>
+                    )}
+                    {renderStatus === 'rendering' && (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Rendering ({renderProgress}%)
+                      </>
+                    )}
+                    {renderStatus === 'completed' && (
+                      <>
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Render Complete
+                      </>
+                    )}
+                    {renderStatus === 'error' && (
+                      <>
+                        <AlertCircle className="w-4 h-4 mr-2" />
+                        Retry Render
+                      </>
+                    )}
+                  </Button>
+                  
+                  {renderError && (
+                    <div className="mt-2 text-xs text-red-600">
+                      {renderError}
+                    </div>
+                  )}
+                  
+                  {renderStatus === 'rendering' && (
+                    <div className="mt-2">
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full transition-all"
+                          style={{ width: `${renderProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="mt-2 text-xs text-gray-500">
+                    Powered by Chillin.online
+                  </div>
+                </div>
               </div>
             </div>
           </CardContent>
