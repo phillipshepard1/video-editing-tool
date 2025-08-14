@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Clustering UI Mockup</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --background: #f8f9fa;
+            --foreground: #2d3748;
+            --terminal-green: #38a169;
+            --terminal-blue: #3182ce;
+            --terminal-yellow: #d69e2e;
+            --terminal-red: #e53e3e;
+            --terminal-purple: #805ad5;
+            --terminal-cyan: #319795;
+            --border-color: #e2e8f0;
+            --secondary-bg: #ffffff;
+        }
+        
+        body {
+            background: var(--background);
+            color: var(--foreground);
+            font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        .terminal-card {
+            background: var(--secondary-bg);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .terminal-header {
+            background: linear-gradient(90deg, var(--terminal-green), #2f855a);
+            color: white;
+            font-weight: bold;
+        }
+        
+        .cluster-glow {
+            animation: pulse 2s infinite;
+            border: 2px solid var(--terminal-green);
+        }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 0 10px rgba(56, 161, 105, 0.3); }
+            50% { box-shadow: 0 0 20px rgba(56, 161, 105, 0.5); }
+            100% { box-shadow: 0 0 10px rgba(56, 161, 105, 0.3); }
+        }
+        
+        .failed-take {
+            opacity: 0.9;
+            border-left: 4px solid var(--terminal-red);
+            background: #fff5f5;
+        }
+        
+        .winning-take {
+            border-left: 4px solid var(--terminal-green);
+            background: #f0fff4;
+        }
+        
+        .comparison-video {
+            background: #f7fafc;
+            border: 2px solid var(--border-color);
+            aspect-ratio: 16/9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #a0aec0;
+        }
+        
+        .toggle-button {
+            background: white;
+            border: 1px solid var(--terminal-green);
+            color: var(--terminal-green);
+            transition: all 0.3s;
+        }
+        
+        .toggle-button:hover {
+            background: var(--terminal-green);
+            color: white;
+        }
+        
+        .toggle-button.active {
+            background: var(--terminal-green);
+            color: white;
+        }
+        
+        .text-terminal-green { color: var(--terminal-green); }
+        .text-terminal-red { color: var(--terminal-red); }
+        .text-terminal-yellow { color: var(--terminal-yellow); }
+        .text-terminal-blue { color: var(--terminal-blue); }
+        .text-terminal-purple { color: var(--terminal-purple); }
+        .text-terminal-cyan { color: var(--terminal-cyan); }
+    </style>
+</head>
+<body class="min-h-screen p-8">
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <div class="mb-8">
+            <h1 class="text-4xl font-bold mb-4 text-terminal-green">
+                Video Analysis - Clustering Mode
+            </h1>
+            <p class="text-gray-500">Automatically detecting and grouping repeated takes</p>
+        </div>
+
+        <!-- View Mode Toggle -->
+        <div class="mb-6 flex gap-2">
+            <button class="toggle-button px-4 py-2 rounded">All Segments (23)</button>
+            <button class="toggle-button active px-4 py-2 rounded">Clustered View (3 clusters)</button>
+            <button class="toggle-button px-4 py-2 rounded">Timeline</button>
+        </div>
+
+        <!-- Stats Bar -->
+        <div class="terminal-card p-4 mb-6 grid grid-cols-4 gap-4">
+            <div>
+                <div class="text-gray-400 text-sm">Clusters Found</div>
+                <div class="text-2xl font-bold">3</div>
+            </div>
+            <div>
+                <div class="text-gray-400 text-sm">Failed Takes</div>
+                <div class="text-2xl font-bold text-red-400">8</div>
+            </div>
+            <div>
+                <div class="text-gray-400 text-sm">Winning Takes</div>
+                <div class="text-2xl font-bold text-green-400">3</div>
+            </div>
+            <div>
+                <div class="text-gray-400 text-sm">Time Saved</div>
+                <div class="text-2xl font-bold">47.3s</div>
+            </div>
+        </div>
+
+        <!-- Cluster Card 1: Opening Statement -->
+        <div class="terminal-card cluster-glow mb-6">
+            <div class="terminal-header px-4 py-2 flex justify-between items-center">
+                <span>📎 CLUSTER: Opening Statement (3 attempts detected)</span>
+                <span class="text-sm">0:28.9 - 1:01.6</span>
+            </div>
+            <div class="p-4">
+                <!-- Failed Attempts -->
+                <div class="mb-4">
+                    <h3 class="text-red-400 font-bold mb-2">⚠️ FAILED ATTEMPTS TO REMOVE:</h3>
+                    <div class="space-y-2">
+                        <div class="failed-take p-3 bg-red-950/30 rounded">
+                            <div class="flex justify-between items-start">
+                                <div class="flex-1">
+                                    <span class="text-red-400">❌ Take 1</span>
+                                    <span class="text-gray-400 ml-2">0:28.9 - 0:35.0 (6.1s)</span>
+                                </div>
+                                <button class="text-xs text-gray-400 hover:text-green-400">Preview</button>
+                            </div>
+                            <div class="text-sm text-gray-300 mt-1">
+                                "Series of false starts, filler words ('uh'), and a throat clear. The speaker restarts the sentence."
+                            </div>
+                        </div>
+                        
+                        <div class="failed-take p-3 bg-red-950/30 rounded">
+                            <div class="flex justify-between items-start">
+                                <div class="flex-1">
+                                    <span class="text-red-400">❌ Take 2</span>
+                                    <span class="text-gray-400 ml-2">0:39.9 - 0:44.2 (4.3s)</span>
+                                </div>
+                                <button class="text-xs text-gray-400 hover:text-green-400">Preview</button>
+                            </div>
+                            <div class="text-sm text-gray-300 mt-1">
+                                "Multiple false starts and restarting the sentence."
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Winning Take -->
+                <div class="mb-4">
+                    <h3 class="text-green-400 font-bold mb-2">✅ WINNING TAKE TO KEEP:</h3>
+                    <div class="winning-take p-3 rounded">
+                        <div class="flex justify-between items-start">
+                            <div class="flex-1">
+                                <span class="text-green-400">▶️ Take 3</span>
+                                <span class="text-gray-400 ml-2">0:44.3 - 1:01.6 (17.3s)</span>
+                                <span class="ml-2 px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded">CLEAN DELIVERY</span>
+                            </div>
+                            <button class="text-xs text-gray-400 hover:text-green-400">Preview</button>
+                        </div>
+                        <div class="text-sm text-gray-300 mt-1">
+                            Clean delivery of introduction - no issues detected
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex gap-2">
+                    <button class="flex-1 bg-green-500/20 hover:bg-green-500/30 text-green-400 py-2 px-4 rounded border border-green-500/50">
+                        ✓ Accept Cluster
+                    </button>
+                    <button class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-400 py-2 px-4 rounded border border-gray-600">
+                        Compare All Takes
+                    </button>
+                    <button class="bg-gray-800 hover:bg-gray-700 text-gray-400 py-2 px-4 rounded border border-gray-600">
+                        Ungroup
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cluster Card 2: Sandwich Shop Story -->
+        <div class="terminal-card mb-6">
+            <div class="terminal-header px-4 py-2 flex justify-between items-center">
+                <span>📎 CLUSTER: Sandwich Shop Explanation (2 attempts detected)</span>
+                <span class="text-sm">1:17.0 - 1:39.1</span>
+            </div>
+            <div class="p-4">
+                <div class="mb-4">
+                    <h3 class="text-red-400 font-bold mb-2">⚠️ FAILED ATTEMPT TO REMOVE:</h3>
+                    <div class="failed-take p-3 bg-red-950/30 rounded">
+                        <div class="flex justify-between items-start">
+                            <div class="flex-1">
+                                <span class="text-red-400">❌ Take 1</span>
+                                <span class="text-gray-400 ml-2">1:17.0 - 1:27.7 (10.7s)</span>
+                            </div>
+                        </div>
+                        <div class="text-sm text-gray-300 mt-1">
+                            "Off-topic rambling, filler phrases ('I'm like'), and explicit digression ('anyways, let me digress')."
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <h3 class="text-green-400 font-bold mb-2">✅ WINNING TAKE TO KEEP:</h3>
+                    <div class="winning-take p-3 rounded">
+                        <div class="flex justify-between items-start">
+                            <div class="flex-1">
+                                <span class="text-green-400">▶️ Take 2</span>
+                                <span class="text-gray-400 ml-2">1:27.8 - 1:33.4 (5.6s)</span>
+                            </div>
+                        </div>
+                        <div class="text-sm text-gray-300 mt-1">
+                            Clean explanation about the sandwich shop ranking
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex gap-2">
+                    <button class="flex-1 bg-green-500/20 hover:bg-green-500/30 text-green-400 py-2 px-4 rounded border border-green-500/50">
+                        ✓ Accept Cluster
+                    </button>
+                    <button class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-400 py-2 px-4 rounded border border-gray-600">
+                        Compare Takes
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Comparison Mode (Hidden by default, shown when "Compare All Takes" is clicked) -->
+        <div class="terminal-card mb-6" id="comparison-view" style="display: none;">
+            <div class="terminal-header px-4 py-2">
+                <span>🎬 SIDE-BY-SIDE COMPARISON</span>
+            </div>
+            <div class="p-4">
+                <div class="grid grid-cols-3 gap-4">
+                    <!-- Take 1 -->
+                    <div>
+                        <div class="comparison-video mb-2">
+                            <span>VIDEO PREVIEW</span>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-red-400 font-bold">Take 1 ❌</div>
+                            <div class="text-xs text-gray-400">Duration: 6.1s</div>
+                            <div class="text-xs text-gray-400">Confidence: 98%</div>
+                            <button class="mt-2 text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded">
+                                Remove
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Take 2 -->
+                    <div>
+                        <div class="comparison-video mb-2">
+                            <span>VIDEO PREVIEW</span>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-red-400 font-bold">Take 2 ❌</div>
+                            <div class="text-xs text-gray-400">Duration: 4.3s</div>
+                            <div class="text-xs text-gray-400">Confidence: 95%</div>
+                            <button class="mt-2 text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded">
+                                Remove
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Take 3 (Winner) -->
+                    <div>
+                        <div class="comparison-video mb-2 border-green-500">
+                            <span>VIDEO PREVIEW</span>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-green-400 font-bold">Take 3 ✅</div>
+                            <div class="text-xs text-gray-400">Duration: 17.3s</div>
+                            <div class="text-xs text-green-400">SELECTED</div>
+                            <button class="mt-2 text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded">
+                                Keep
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Playback Controls -->
+                <div class="mt-4 flex justify-center gap-2">
+                    <button class="bg-gray-800 text-gray-400 px-4 py-2 rounded">Play All</button>
+                    <button class="bg-gray-800 text-gray-400 px-4 py-2 rounded">Play Sequential</button>
+                    <button class="bg-green-500/20 text-green-400 px-4 py-2 rounded">Confirm Selection</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Regular Segments (shown when not in cluster mode) -->
+        <div class="text-gray-400 text-sm mt-8">
+            <p>Additional segments not part of clusters would appear below...</p>
+        </div>
+
+        <!-- Bulk Actions Bar -->
+        <div class="fixed bottom-0 left-0 right-0 bg-black/90 border-t border-green-500/30 p-4">
+            <div class="max-w-7xl mx-auto flex justify-between items-center">
+                <div class="text-sm">
+                    <span class="text-gray-400">3 clusters selected</span>
+                    <span class="text-green-400 ml-4">• Total time saved: 47.3s</span>
+                </div>
+                <div class="flex gap-2">
+                    <button class="bg-green-500/20 hover:bg-green-500/30 text-green-400 py-2 px-6 rounded border border-green-500/50">
+                        Accept All Clusters
+                    </button>
+                    <button class="bg-gray-800 hover:bg-gray-700 text-gray-400 py-2 px-6 rounded border border-gray-600">
+                        Review Individual
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simple interactivity for demo
+        document.querySelectorAll('.toggle-button').forEach(button => {
+            button.addEventListener('click', function() {
+                document.querySelectorAll('.toggle-button').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+
+        // Show comparison view when clicked
+        document.querySelectorAll('button').forEach(button => {
+            if (button.textContent.includes('Compare')) {
+                button.addEventListener('click', function() {
+                    const comparisonView = document.getElementById('comparison-view');
+                    comparisonView.style.display = comparisonView.style.display === 'none' ? 'block' : 'none';
+                });
+            }
+        });
+    </script>
+</body>
+</html>
