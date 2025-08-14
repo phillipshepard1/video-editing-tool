@@ -15,7 +15,7 @@ interface VideoUploaderProps {
 export function VideoUploader({ 
   onFileSelect, 
   isUploading = false,
-  maxSizeMB = 2000 
+  maxSizeMB = 5120 // 5GB limit for new browser-based processing
 }: VideoUploaderProps) {
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -84,7 +84,7 @@ export function VideoUploader({
                   {isDragActive ? 'Drop your video here' : 'Drop video here or click to browse'}
                 </p>
                 <p className="text-sm text-gray-500 mt-2">
-                  Supported: MP4, MOV, AVI, MKV, WebM (max {maxSizeMB}MB)
+                  Supported: MP4, MOV, AVI, MKV, WebM (max {Math.round(maxSizeMB/1024)}GB)
                 </p>
               </div>
             </>

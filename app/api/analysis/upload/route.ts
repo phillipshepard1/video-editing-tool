@@ -66,13 +66,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`Uploading video: ${file.name}, size: ${file.size} bytes`);
+    console.log(`Uploading video: ${file.name}, size: ${file.size} bytes (${(file.size / 1024 / 1024).toFixed(1)} MB)`);
+    const uploadStartTime = Date.now();
 
     // Create form data for Gemini
     const geminiFormData = new FormData();
     geminiFormData.append('file', file);
 
     // Upload to Gemini Files API
+    console.log('Starting upload to Gemini API...');
     const uploadResponse = await fetch(
       `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${process.env.GEMINI_API_KEY}`,
       {
@@ -91,7 +93,8 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await uploadResponse.json();
-    console.log('Upload successful:', result.file.name);
+    const uploadTime = Date.now() - uploadStartTime;
+    console.log(`Upload successful: ${result.file.name} (took ${uploadTime}ms / ${(uploadTime/1000).toFixed(1)}s)`);
     
     // Wait for file to become active
     console.log('Waiting for file to become active...');
