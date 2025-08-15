@@ -29,30 +29,36 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // More aggressive prompt for better detection
+    // Enhanced categorization prompt for sophisticated segment analysis
     const analysisPrompt = `Carefully analyze this ENTIRE video from start to finish and identify ALL segments that should be removed to create a tighter, more professional edit.
 
-BE VERY THOROUGH - Check every second of the video for:
-1. ANY pause or silence longer than 1.5 seconds (mark ALL of them!)
-2. Filler words: "um", "uh", "like", "you know", "so", "basically", "actually"
-3. False starts where speaker begins a sentence then restarts
-4. Repeated words or phrases said multiple times
-5. Dead air at beginning or end of video
-6. Times when speaker is thinking/searching for words
-7. Awkward transitions between topics
-8. Redundant explanations or repeated information
-9. Off-topic tangents or rambling
-10. Technical issues (audio problems, video glitches, etc.)
-11. Low energy or mumbling sections
-12. Coughs, throat clearing, or other interruptions
+CATEGORIZATION SYSTEM - Use these EXACT category values (NO OTHER VALUES ALLOWED):
+- "bad_take": Multiple attempts where this one is clearly worse (include alternativeSegment reference)
+- "pause": Silence longer than 2 seconds (NOT "dead_air") 
+- "false_start": Incomplete thoughts, restarts
+- "filler_words": Excessive "um", "uh", "like", "you know", "so", "basically", "actually" (NOT "filler")
+- "technical": Audio/video issues, glitches, technical problems
+- "redundant": Repeated information already covered
+- "tangent": Off-topic content that doesn't serve the main message (NOT "off_topic" or "off-topic")
+- "low_energy": Noticeably quieter delivery, mumbling, low enthusiasm
+- "long_explanation": Extended sections that could be condensed
+- "weak_transition": Awkward topic changes, poor flow between ideas
 
-IMPORTANT: 
+CRITICAL: Only use the exact strings above. Do not use "off_topic", "filler", "dead_air" or any other variations.
+
+ANALYSIS REQUIREMENTS:
 - Scan the ENTIRE video from 0:00 to the very end
-- Find EVERY pause over 1.5 seconds, not just a few
-- Be aggressive - it's better to mark too many segments than too few
-- Each pause should be its own segment entry
-- Include timestamps for EVERYTHING you find
-- Check EVERY minute of the video thoroughly
+- Find EVERY pause over 2 seconds, not just a few
+- Include the first 50 characters of spoken content as "transcript"
+- Assign severity: "high" (definitely remove), "medium" (probably remove), "low" (consider keeping)
+- Provide contextNote explaining why this segment might be kept or removed
+- For "bad_take" category, include alternativeSegment reference to better version
+- Be thorough but thoughtful - quality over quantity
+
+SEVERITY GUIDELINES:
+- HIGH: Clear issues that hurt video quality (long pauses, technical problems, bad takes)
+- MEDIUM: Content that could be improved but isn't terrible (some filler words, minor redundancy)
+- LOW: Borderline cases where removal might hurt flow (brief pauses, stylistic choices)
 
 ${prompt ? `Additional instructions: ${prompt}` : ''}
 
@@ -63,19 +69,40 @@ Return only valid JSON in this format:
       "startTime": "0:05",
       "endTime": "0:08", 
       "duration": 3,
-      "reason": "Long pause",
+      "reason": "Long uncomfortable pause",
       "category": "pause",
-      "confidence": 0.9
+      "severity": "high",
+      "confidence": 0.95,
+      "transcript": "So... [long pause] ...what I want to say is",
+      "contextNote": "Pause disrupts flow and adds no value"
     },
     {
       "startTime": "0:15",
       "endTime": "0:17", 
       "duration": 2,
-      "reason": "Filler word 'um'",
-      "category": "filler",
-      "confidence": 0.95
+      "reason": "Multiple filler words in succession",
+      "category": "filler_words",
+      "severity": "medium", 
+      "confidence": 0.85,
+      "transcript": "Um, uh, like, you know what I mean?",
+      "contextNote": "Could be cleaned up but doesn't completely break flow"
     },
-    // ... include ALL segments found, could be 20-50+ segments for a 12 minute video
+    {
+      "startTime": "2:30",
+      "endTime": "2:45", 
+      "duration": 15,
+      "reason": "This attempt was clearly worse than the previous take",
+      "category": "bad_take",
+      "severity": "high",
+      "confidence": 0.90,
+      "transcript": "Let me... no wait... actually let me start over",
+      "contextNote": "Speaker self-corrects, indicating this wasn't the intended delivery",
+      "alternativeSegment": {
+        "startTime": "2:50",
+        "endTime": "3:05",
+        "reason": "Cleaner delivery of the same content"
+      }
+    }
   ],
   "summary": {
     "originalDuration": 720,
@@ -209,6 +236,33 @@ Return only valid JSON in this format:
           { status: 500 }
         );
       }
+    }
+
+    // Enhance segments with required fields for UI compatibility
+    if (analysisResult?.segmentsToRemove) {
+      analysisResult.segmentsToRemove = analysisResult.segmentsToRemove.map((segment: any, index: number) => {
+        // Normalize legacy category names to proper enum values
+        let normalizedCategory = segment.category;
+        if (segment.category === 'off_topic' || segment.category === 'off-topic') {
+          normalizedCategory = 'tangent';
+        } else if (segment.category === 'filler') {
+          normalizedCategory = 'filler_words';
+        } else if (segment.category === 'dead_air') {
+          normalizedCategory = 'pause';
+        }
+        
+        return {
+          ...segment,
+          id: `segment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${index}`, // Add unique ID
+          selected: true, // Default to selected for removal
+          category: normalizedCategory, // Use normalized category
+          // Ensure all enhanced fields are present with defaults
+          severity: segment.severity || 'medium',
+          transcript: segment.transcript || '',
+          contextNote: segment.contextNote || '',
+          alternativeSegment: segment.alternativeSegment || undefined
+        };
+      });
     }
 
     const processingTime = Date.now() - startTime;

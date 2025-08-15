@@ -43,10 +43,12 @@ export async function POST(request: NextRequest) {
     );
 
     console.log('Submitting render job to Chillin:', {
+      videoUrl,
       segments: segmentsToRemove.length,
       duration: videoDuration,
       keeperSegments: chillinRequest.project.elements.length
     });
+    console.log('Chillin request payload:', JSON.stringify(chillinRequest, null, 2));
 
     // Submit the render job
     const renderResponse = await submitRenderJob(chillinRequest, apiKey);
@@ -60,6 +62,7 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Chillin render error:', error);
+    console.log('Debug context:', { videoUrl, segments: segmentsToRemove?.length });
     return NextResponse.json(
       { 
         error: 'Failed to submit render job',
@@ -91,6 +94,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Handle mock render IDs
+    if (renderId.startsWith('mock-render-')) {
+      console.log('Handling mock render status check for:', renderId);
+      return NextResponse.json({
+        status: 'completed',
+        outputUrl: 'https://example.com/mock-video.mp4',
+        message: 'Mock render completed - external service unavailable',
+        mock: true
+      });
+    }
+    
     const status = await getRenderStatus(renderId, apiKey);
 
     return NextResponse.json({

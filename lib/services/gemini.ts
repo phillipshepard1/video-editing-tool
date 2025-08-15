@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { ContentGroup, Take, EnhancedAnalysisResult } from '@/lib/types/takes';
 
 // Initialize Gemini AI client
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
@@ -174,6 +175,168 @@ export async function getFileStatus(fileUri: string): Promise<any> {
   }
 
   return response.json();
+}
+
+// Enhanced analysis with content grouping and take quality assessment
+export async function analyzeVideoWithTakes(
+  fileUri: string,
+  prompt: string,
+  targetDuration?: number
+): Promise<EnhancedAnalysisResult> {
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-2.5-pro',
+    generationConfig: {
+      temperature: 0.2, // Lower temperature for more consistent quality scoring
+      topP: 0.8,
+      topK: 40,
+      maxOutputTokens: 16384, // More tokens for detailed analysis
+      responseMimeType: 'application/json',
+    },
+  });
+
+  const enhancedPrompt = `
+    Analyze this talking head video with DEEP FOCUS on identifying multiple takes of the same content and rating their quality.
+    
+    PRIMARY OBJECTIVES:
+    1. IDENTIFY CONTENT GROUPS: Look for segments where the speaker attempts the same content multiple times
+    2. QUALITY ASSESSMENT: Rate each take on a 1-10 scale considering delivery, clarity, confidence, and completeness
+    3. BEST TAKE SELECTION: Choose the highest quality version of each content group
+    4. DETAILED REASONING: Explain why one take is better than others
+    
+    ANALYSIS CRITERIA FOR TAKES:
+    
+    QUALITY FACTORS (Rate 1-10):
+    - Delivery Clarity: Clear speech, good pace, no stumbling
+    - Confidence: Speaker sounds assured and authoritative  
+    - Content Completeness: Full thought expressed without cutoffs
+    - Audio Quality: Clear audio without technical issues
+    - Energy Level: Appropriate energy for the content
+    - Naturalness: Flows naturally without seeming forced
+    
+    CONTENT GROUPING INDICATORS:
+    - False starts followed by retry attempts
+    - Repeated phrases or explanations
+    - Similar content with slight variations
+    - "Let me try that again" or similar restart cues
+    - Multiple approaches to explaining the same concept
+    
+    ISSUES TO IDENTIFY:
+    - audio_quality: Background noise, unclear audio, levels
+    - delivery: Stumbling, unclear speech, pace problems
+    - content: Incomplete thoughts, factual errors, unclear explanations
+    - technical: Video/audio glitches, lighting issues
+    - pacing: Too fast, too slow, awkward pauses
+    - energy: Low energy, monotone, lack of enthusiasm
+    
+    POSITIVE QUALITIES TO IDENTIFY:
+    - clear_delivery: Crisp, well-paced speech
+    - good_pace: Natural rhythm and timing
+    - confident_tone: Assured, authoritative delivery
+    - complete_thought: Full, coherent explanations
+    - good_audio: Clear, professional audio quality
+    
+    ${targetDuration ? `Target final duration: ${targetDuration} minutes` : ''}
+    
+    Additional instructions: ${prompt}
+    
+    Return ONLY a valid JSON object with this EXACT structure:
+    {
+      "segments": [
+        // Traditional segments to remove (existing format)
+        {
+          "startTime": "MM:SS",
+          "endTime": "MM:SS", 
+          "duration": number,
+          "reason": "string",
+          "category": "pause|filler|redundant|off-topic|technical",
+          "confidence": 0.0-1.0
+        }
+      ],
+      "contentGroups": [
+        {
+          "id": "group-1",
+          "name": "Introduction Attempts",
+          "description": "Multiple attempts at opening statement",
+          "takes": [
+            {
+              "id": "take-1",
+              "startTime": "MM:SS",
+              "endTime": "MM:SS",
+              "duration": number,
+              "transcript": "First 100 chars of what was said...",
+              "qualityScore": 1-10,
+              "issues": [
+                {
+                  "type": "delivery|audio_quality|content|technical|pacing|energy",
+                  "severity": "low|medium|high", 
+                  "description": "Specific issue description"
+                }
+              ],
+              "qualities": [
+                {
+                  "type": "clear_delivery|good_pace|confident_tone|complete_thought|good_audio",
+                  "description": "Specific quality description"
+                }
+              ],
+              "confidence": 0.0-1.0
+            }
+          ],
+          "bestTakeId": "take-id",
+          "reasoning": "Detailed explanation of why this take is best",
+          "contentType": "introduction|explanation|conclusion|transition|key_point|general",
+          "timeRange": {"start": "MM:SS", "end": "MM:SS"},
+          "averageQuality": number,
+          "confidence": 0.0-1.0
+        }
+      ],
+      "summary": {
+        "originalDuration": number,
+        "finalDuration": number, 
+        "timeRemoved": number,
+        "segmentCount": number,
+        "groupCount": number,
+        "takesAnalyzed": number,
+        "averageQualityImprovement": number
+      }
+    }
+    
+    CRITICAL: Focus heavily on finding multiple takes of the same content. Look for patterns where speakers restart, rephrase, or re-attempt explanations. Rate each attempt's quality objectively and choose the best version.
+  `;
+
+  const startTime = Date.now();
+
+  try {
+    const result = await model.generateContent([
+      {
+        fileData: {
+          mimeType: 'video/mp4',
+          fileUri: fileUri,
+        },
+      },
+      { text: enhancedPrompt },
+    ]);
+
+    const response = await result.response;
+    const text = response.text();
+    const parsed = JSON.parse(text);
+
+    const processingTime = Date.now() - startTime;
+    const tokenCount = response.usageMetadata?.totalTokenCount || 0;
+    const estimatedCost = calculateCost(tokenCount);
+
+    return {
+      ...parsed,
+      metadata: {
+        processingTime,
+        tokenCount,
+        estimatedCost,
+        analysisVersion: 'enhanced-v1.0',
+      },
+    };
+  } catch (error) {
+    console.error('Enhanced analysis error:', error);
+    throw new Error('Failed to analyze video with take detection');
+  }
 }
 
 // Delete file from Gemini (cleanup)

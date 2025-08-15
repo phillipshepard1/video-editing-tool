@@ -4,8 +4,9 @@ import { EnhancedSegment } from '@/lib/types/segments';
 import { TakeCluster, ClusterSelection } from '@/lib/clustering';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Download, FileText, Film, FileCode, Video, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { Download, FileText, Film, FileCode, Video, Loader2, CheckCircle, AlertCircle, Upload } from 'lucide-react';
 import { useState } from 'react';
+import { getVideoFileForUpload, uploadVideoToSupabase } from '@/lib/video-upload';
 
 interface FinalReviewPanelProps {
   finalSegmentsToRemove: EnhancedSegment[];
@@ -35,6 +36,7 @@ export function FinalReviewPanel({
   const [renderError, setRenderError] = useState<string | null>(null);
   const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null);
   const [renderId, setRenderId] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const timeRemoved = originalDuration - finalDuration;
   const reductionPercentage = ((timeRemoved / originalDuration) * 100).toFixed(1);
   
@@ -64,32 +66,79 @@ export function FinalReviewPanel({
     setRenderStatus('uploading');
     setRenderError(null);
     setRenderProgress(0);
+    setUploadProgress(0);
 
     try {
-      // Submit render job
-      const response = await fetch('/api/render/chillin', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          videoUrl,
-          segmentsToRemove: finalSegmentsToRemove,
-          videoDuration: videoDuration || originalDuration,
-          // These would ideally come from video metadata
-          videoWidth: 1920,
-          videoHeight: 1080,
-          fps: 30
-        })
-      });
+      // Check video file size first
+      const videoFile = await getVideoFileForUpload(videoUrl, 'original_video.mp4');
+      console.log('Video file prepared:', videoFile.name, videoFile.size);
+      const fileSizeMB = videoFile.size / (1024 * 1024);
+      
+      let renderData;
+      let uploadResult: any = null;
+      
+      if (fileSizeMB > 50) {
+        // Large file: Send directly to render service without Supabase
+        console.log(`Large file (${fileSizeMB.toFixed(1)}MB): Sending directly to render service...`);
+        setRenderStatus('rendering');
+        
+        const formData = new FormData();
+        formData.append('video', videoFile);
+        formData.append('segments', JSON.stringify(finalSegmentsToRemove));
+        formData.append('videoDuration', String(videoDuration || originalDuration));
+        
+        const response = await fetch('/api/render/chillin-direct', {
+          method: 'POST',
+          body: formData
+        });
 
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to submit render job');
+        renderData = await response.json();
+        console.log('Direct render job submitted:', renderData);
+      } else {
+        // Small file: Use original Supabase approach
+        console.log(`Small file (${fileSizeMB.toFixed(1)}MB): Uploading to Supabase first...`);
+        setRenderStatus('uploading');
+        
+        uploadResult = await uploadVideoToSupabase(videoFile, (progress) => {
+          setUploadProgress(progress.percentage);
+          console.log('Upload progress:', progress.percentage + '%');
+        });
+        
+        console.log('Video uploaded to Supabase:', uploadResult.publicUrl);
+        setUploadProgress(100);
+        setRenderStatus('rendering');
+        
+        const response = await fetch('/api/render/chillin', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            videoUrl: uploadResult.publicUrl,
+            segmentsToRemove: finalSegmentsToRemove,
+            videoDuration: videoDuration || originalDuration,
+            videoWidth: 1920,
+            videoHeight: 1080,
+            fps: 30
+          })
+        });
+        
+        renderData = await response.json();
+        console.log('Supabase render job submitted:', renderData);
       }
 
-      setRenderId(result.renderId);
+      if (!renderData || renderData.error) {
+        const errorMessage = renderData?.error || 'Failed to submit render job';
+        console.error('Render submission failed:', {
+          renderData,
+          errorMessage,
+          videoUrl: fileSizeMB > 50 ? 'direct-upload' : uploadResult?.publicUrl,
+          segmentsCount: finalSegmentsToRemove.length
+        });
+        throw new Error(errorMessage);
+      }
+
+      setRenderId(renderData.renderId);
       setRenderStatus('rendering');
       setRenderProgress(10);
 
@@ -100,32 +149,52 @@ export function FinalReviewPanel({
 
       const pollStatus = async () => {
         if (attempts >= maxAttempts) {
-          throw new Error('Render timeout - please try again');
+          console.error('Render timeout after', attempts, 'attempts');
+          throw new Error(`Render timeout after ${Math.floor((attempts * pollInterval) / 1000 / 60)} minutes - the job may still be processing in the background. Check the Chillin console.`);
         }
 
-        const statusResponse = await fetch(`/api/render/chillin?renderId=${result.renderId}`);
-        const statusResult = await statusResponse.json();
+        try {
+          const statusResponse = await fetch(`/api/render/chillin?renderId=${renderData.renderId}`);
+          const statusResult = await statusResponse.json();
+          
+          console.log(`Status check ${attempts + 1}:`, statusResult);
 
-        if (statusResult.status === 'completed' && statusResult.outputUrl) {
-          setRenderStatus('completed');
-          setRenderProgress(100);
-          setRenderedVideoUrl(statusResult.outputUrl);
-          
-          // Download the video
-          const link = document.createElement('a');
-          link.href = statusResult.outputUrl;
-          link.download = `edited_video_${Date.now()}.mp4`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          
-        } else if (statusResult.status === 'failed') {
-          throw new Error(statusResult.error || 'Render failed');
-        } else {
-          // Still processing
+          if (statusResult.status === 'completed' && statusResult.outputUrl) {
+            console.log('Render completed:', statusResult.outputUrl);
+            setRenderStatus('completed');
+            setRenderProgress(100);
+            setRenderedVideoUrl(statusResult.outputUrl);
+            
+            // Download the video
+            const link = document.createElement('a');
+            link.href = statusResult.outputUrl;
+            link.download = `edited_video_${Date.now()}.mp4`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+          } else if (statusResult.status === 'failed') {
+            console.error('Render failed:', statusResult);
+            throw new Error(statusResult.error || 'Render failed');
+          } else if (statusResult.status === 'error') {
+            console.error('Render error:', statusResult);
+            throw new Error(statusResult.error || statusResult.details || 'Render error');
+          } else {
+            // Still processing
+            attempts++;
+            console.log(`Still processing... attempt ${attempts}/${maxAttempts}`);
+            setRenderProgress(Math.min(90, 10 + (attempts * 80 / maxAttempts)));
+            setTimeout(pollStatus, pollInterval);
+          }
+        } catch (fetchError) {
+          console.error('Error checking render status:', fetchError);
           attempts++;
-          setRenderProgress(Math.min(90, 10 + (attempts * 80 / maxAttempts)));
-          setTimeout(pollStatus, pollInterval);
+          if (attempts < maxAttempts) {
+            console.log('Retrying status check...');
+            setTimeout(pollStatus, pollInterval);
+          } else {
+            throw new Error('Failed to check render status: ' + (fetchError as Error).message);
+          }
         }
       };
 
@@ -136,6 +205,14 @@ export function FinalReviewPanel({
       console.error('Render error:', error);
       setRenderStatus('error');
       setRenderError(error instanceof Error ? error.message : 'Failed to render video');
+      
+      // Log additional context for debugging
+      console.log('Debug info:', {
+        videoUrl,
+        segmentsCount: finalSegmentsToRemove.length,
+        videoDuration: videoDuration || originalDuration,
+        renderId
+      });
     }
   };
 
@@ -221,8 +298,8 @@ export function FinalReviewPanel({
                     )}
                     {renderStatus === 'uploading' && (
                       <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Uploading...
+                        <Upload className="w-4 h-4 mr-2 animate-spin" />
+                        Uploading... ({uploadProgress}%)
                       </>
                     )}
                     {renderStatus === 'rendering' && (
@@ -251,12 +328,15 @@ export function FinalReviewPanel({
                     </div>
                   )}
                   
-                  {renderStatus === 'rendering' && (
+                  {(renderStatus === 'uploading' || renderStatus === 'rendering') && (
                     <div className="mt-2">
+                      <div className="text-xs text-gray-500 mb-1">
+                        {renderStatus === 'uploading' ? 'Uploading video...' : 'Rendering video...'}
+                      </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
                         <div 
                           className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full transition-all"
-                          style={{ width: `${renderProgress}%` }}
+                          style={{ width: `${renderStatus === 'uploading' ? uploadProgress : renderProgress}%` }}
                         />
                       </div>
                     </div>
@@ -309,7 +389,7 @@ export function FinalReviewPanel({
                       
                       return (
                         <div
-                          key={segment.id}
+                          key={`${segment.id}-${index}`}
                           className="absolute h-full bg-red-500 opacity-50"
                           style={{
                             left: `${startPercent}%`,

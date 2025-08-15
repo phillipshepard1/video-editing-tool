@@ -14,8 +14,11 @@ import {
 } from 'lucide-react';
 import { formatTime, formatFileSize } from '@/lib/utils';
 import { EnhancedSegment, FilterState, createDefaultFilterState, SegmentCategory } from '@/lib/types/segments';
+import { EnhancedAnalysisResult } from '@/lib/types/takes';
+import { createMockEnhancedAnalysis } from '@/lib/take-converter';
 import { needsCompression, compressVideoForAnalysis } from '@/lib/video-compression';
 import { generateFCPXML, generateEDL, generatePremiereXML, downloadFile } from '@/lib/export-formats';
+import Link from 'next/link';
 
 interface AnalysisResult {
   segmentsToRemove: EnhancedSegment[];
@@ -47,6 +50,8 @@ export default function DashboardPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [enhancedAnalysis, setEnhancedAnalysis] = useState<EnhancedAnalysisResult | null>(null);
+  const [useEnhancedAnalysis, setUseEnhancedAnalysis] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [analysisProgress, setAnalysisProgress] = useState(0);
@@ -196,39 +201,92 @@ export default function DashboardPage() {
       setIsAnalyzing(true);
       setAnalysisProgress(10);
 
-      const analyzeResponse = await fetch('/api/analysis/process', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          fileUri: uploadResult.fileUri,
-          prompt: 'Analyze for pauses, filler words, and content that can be removed',
-          fileSize: Math.round(videoToUpload.size / (1024 * 1024)),
-        }),
-      });
+      let analyzeResult;
+      let enhancedResult: EnhancedAnalysisResult | null = null;
 
-      if (!analyzeResponse.ok) {
-        const errorData = await analyzeResponse.json();
-        throw new Error(errorData.error || 'Analysis failed');
+      if (useEnhancedAnalysis) {
+        try {
+          // Try enhanced analysis first
+          const enhancedResponse = await fetch('/api/analysis/process-enhanced', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              fileUri: uploadResult.fileUri,
+              prompt: 'Analyze for multiple takes, quality scoring, and take recommendations',
+            }),
+          });
+
+          if (enhancedResponse.ok) {
+            const enhancedData = await enhancedResponse.json();
+            enhancedResult = enhancedData.analysis;
+            setAnalysisProgress(100);
+            console.log('Enhanced analysis successful:', enhancedResult);
+          } else {
+            console.log('Enhanced analysis failed, falling back to traditional');
+          }
+        } catch (enhancedError) {
+          console.log('Enhanced analysis error, falling back to traditional:', enhancedError);
+        }
       }
 
-      const analyzeResult = await analyzeResponse.json();
-      setAnalysisProgress(100);
+      // If enhanced analysis failed or not requested, use traditional analysis
+      if (!enhancedResult) {
+        const analyzeResponse = await fetch('/api/analysis/process', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fileUri: uploadResult.fileUri,
+            prompt: 'Analyze for pauses, filler words, and content that can be removed',
+            fileSize: Math.round(videoToUpload.size / (1024 * 1024)),
+          }),
+        });
+
+        if (!analyzeResponse.ok) {
+          const errorData = await analyzeResponse.json();
+          throw new Error(errorData.error || 'Analysis failed');
+        }
+
+        analyzeResult = await analyzeResponse.json();
+        setAnalysisProgress(100);
+      }
 
       // Process results
-      const enhancedSegments: EnhancedSegment[] = analyzeResult.analysis.segmentsToRemove.map((seg: any, index: number) => ({
-        ...seg,
-        id: `segment-${index}`,
-        selected: true,
-      }));
+      let enhancedSegments: EnhancedSegment[];
+      
+      if (enhancedResult) {
+        // Use enhanced analysis results
+        enhancedSegments = enhancedResult.segments?.map((seg: any, index: number) => ({
+          ...seg,
+          id: seg.id || `segment-${index}`,
+          selected: true,
+        })) || [];
+        
+        setEnhancedAnalysis(enhancedResult);
+        console.log('Using enhanced analysis with', enhancedResult.contentGroups?.length || 0, 'content groups');
+      } else {
+        // Use traditional analysis results
+        enhancedSegments = analyzeResult.analysis.segmentsToRemove.map((seg: any, index: number) => ({
+          ...seg,
+          id: `segment-${index}`,
+          selected: true,
+        }));
+        
+        // Create mock enhanced analysis for groups view compatibility
+        const mockEnhanced = createMockEnhancedAnalysis(enhancedSegments, videoDuration);
+        setEnhancedAnalysis(mockEnhanced);
+        console.log('Using traditional analysis with mock groups');
+      }
       
       console.log('Enhanced segments created:', enhancedSegments);
       console.log('Categories:', enhancedSegments.map(s => `${s.startTime}: ${s.category}`));
 
       setAnalysis({
         segmentsToRemove: enhancedSegments,
-        summary: analyzeResult.analysis.summary,
+        summary: enhancedResult?.summary || analyzeResult.analysis.summary,
       });
       setVisibleSegments(enhancedSegments);
       setView('analysis');
@@ -246,6 +304,7 @@ export default function DashboardPage() {
     setFile(null);
     setVideoUrl(null);
     setAnalysis(null);
+    setEnhancedAnalysis(null);
     setError(null);
     setUploadProgress(0);
     setAnalysisProgress(0);
@@ -312,6 +371,8 @@ export default function DashboardPage() {
               originalDuration={analysis.summary.originalDuration}
               videoRef={videoRef}
               onSegmentSelect={setSelectedSegment}
+              originalFilename={file?.name}
+              enhancedAnalysis={enhancedAnalysis}
             />
           </div>
         </main>
@@ -502,6 +563,12 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-gray-900">Recent Projects</h2>
               <div className="flex items-center gap-2">
+                <Link href="/sessions">
+                  <Button variant="outline" size="sm" className="flex items-center gap-2">
+                    <FolderOpen className="w-4 h-4" />
+                    View All Sessions
+                  </Button>
+                </Link>
                 <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
                   <Grid className="w-5 h-5 text-gray-600" />
                 </button>
