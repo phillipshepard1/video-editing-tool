@@ -25,6 +25,7 @@ interface WorkflowManagerProps {
   onSegmentSelect: (segment: EnhancedSegment | null) => void;
   originalFilename?: string;
   enhancedAnalysis?: EnhancedAnalysisResult | null; // Optional enhanced analysis with take groups
+  supabaseUrl?: string;  // Pre-uploaded Supabase URL
 }
 
 export function WorkflowManagerV2({
@@ -37,7 +38,8 @@ export function WorkflowManagerV2({
   videoRef,
   onSegmentSelect,
   originalFilename,
-  enhancedAnalysis
+  enhancedAnalysis,
+  supabaseUrl
 }: WorkflowManagerProps) {
   const [currentStep, setCurrentStep] = useState(1);
   const [clusters, setClusters] = useState<TakeCluster[]>([]);
@@ -437,6 +439,7 @@ export function WorkflowManagerV2({
               videoUrl={videoUrl}
               videoRef={videoRef}
               videoDuration={videoDuration}
+              supabaseUrl={supabaseUrl}
             />
           )}
         </>

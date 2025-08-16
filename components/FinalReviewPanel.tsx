@@ -18,6 +18,7 @@ interface FinalReviewPanelProps {
   videoUrl: string | null;
   videoRef: React.RefObject<HTMLVideoElement>;
   videoDuration?: number;
+  supabaseUrl?: string;  // Pre-uploaded Supabase URL
 }
 
 export function FinalReviewPanel({
@@ -29,7 +30,8 @@ export function FinalReviewPanel({
   onExport,
   videoUrl,
   videoRef,
-  videoDuration
+  videoDuration,
+  supabaseUrl
 }: FinalReviewPanelProps) {
   const [renderStatus, setRenderStatus] = useState<'idle' | 'uploading' | 'rendering' | 'completed' | 'error'>('idle');
   const [renderProgress, setRenderProgress] = useState(0);
@@ -63,76 +65,66 @@ export function FinalReviewPanel({
       return;
     }
 
-    setRenderStatus('uploading');
     setRenderError(null);
     setRenderProgress(0);
     setUploadProgress(0);
 
     try {
-      // Check video file size first
-      const videoFile = await getVideoFileForUpload(videoUrl, 'original_video.mp4');
-      console.log('Video file prepared:', videoFile.name, videoFile.size);
-      const fileSizeMB = videoFile.size / (1024 * 1024);
+      let publicUrl: string;
       
-      let renderData;
-      let uploadResult: any = null;
-      
-      if (fileSizeMB > 50) {
-        // Large file: Send directly to render service without Supabase
-        console.log(`Large file (${fileSizeMB.toFixed(1)}MB): Sending directly to render service...`);
+      // Check if we already have a Supabase URL from the initial upload
+      if (supabaseUrl) {
+        console.log('Using pre-uploaded Supabase URL:', supabaseUrl);
+        publicUrl = supabaseUrl;
+        setUploadProgress(100);  // Show as already uploaded
         setRenderStatus('rendering');
-        
-        const formData = new FormData();
-        formData.append('video', videoFile);
-        formData.append('segments', JSON.stringify(finalSegmentsToRemove));
-        formData.append('videoDuration', String(videoDuration || originalDuration));
-        
-        const response = await fetch('/api/render/chillin-direct', {
-          method: 'POST',
-          body: formData
-        });
-
-        renderData = await response.json();
-        console.log('Direct render job submitted:', renderData);
       } else {
-        // Small file: Use original Supabase approach
-        console.log(`Small file (${fileSizeMB.toFixed(1)}MB): Uploading to Supabase first...`);
+        // Fallback: Upload video to Supabase if not already uploaded
+        console.log('No pre-uploaded URL, uploading to Supabase now...');
         setRenderStatus('uploading');
         
-        uploadResult = await uploadVideoToSupabase(videoFile, (progress) => {
+        const videoFile = await getVideoFileForUpload(videoUrl, 'original_video.mp4');
+        console.log('Video file prepared:', videoFile.name, videoFile.size);
+        const fileSizeMB = videoFile.size / (1024 * 1024);
+        
+        console.log(`Processing video file (${fileSizeMB.toFixed(1)}MB): Uploading to Supabase...`);
+        
+        const uploadResult = await uploadVideoToSupabase(videoFile, (progress) => {
           setUploadProgress(progress.percentage);
           console.log('Upload progress:', progress.percentage + '%');
         });
         
         console.log('Video uploaded to Supabase:', uploadResult.publicUrl);
+        publicUrl = uploadResult.publicUrl;
         setUploadProgress(100);
         setRenderStatus('rendering');
-        
-        const response = await fetch('/api/render/chillin', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            videoUrl: uploadResult.publicUrl,
-            segmentsToRemove: finalSegmentsToRemove,
-            videoDuration: videoDuration || originalDuration,
-            videoWidth: 1920,
-            videoHeight: 1080,
-            fps: 30
-          })
-        });
-        
-        renderData = await response.json();
-        console.log('Supabase render job submitted:', renderData);
       }
+      
+      // Use URL-based rendering (no file size limits)
+      const response = await fetch('/api/render/chillin', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          videoUrl: publicUrl,  // Use the publicUrl (either pre-uploaded or just uploaded)
+          segmentsToRemove: finalSegmentsToRemove,
+          videoDuration: videoDuration || originalDuration,
+          videoWidth: 1920,
+          videoHeight: 1080,
+          fps: 30
+        })
+      });
+      
+      const renderData = await response.json();
+      console.log('URL-based render job submitted:', renderData);
 
       if (!renderData || renderData.error) {
         const errorMessage = renderData?.error || 'Failed to submit render job';
         console.error('Render submission failed:', {
           renderData,
           errorMessage,
-          videoUrl: fileSizeMB > 50 ? 'direct-upload' : uploadResult?.publicUrl,
+          videoUrl: uploadResult?.publicUrl,
           segmentsCount: finalSegmentsToRemove.length
         });
         throw new Error(errorMessage);
@@ -144,13 +136,16 @@ export function FinalReviewPanel({
 
       // Poll for status
       let attempts = 0;
-      const maxAttempts = 60; // 5 minutes max
+      const maxAttempts = 180; // 15 minutes max for large videos
       const pollInterval = 5000; // 5 seconds
 
       const pollStatus = async () => {
         if (attempts >= maxAttempts) {
           console.error('Render timeout after', attempts, 'attempts');
-          throw new Error(`Render timeout after ${Math.floor((attempts * pollInterval) / 1000 / 60)} minutes - the job may still be processing in the background. Check the Chillin console.`);
+          setRenderStatus('timeout');
+          setRenderProgress(0);
+          alert(`Render is taking longer than expected (${Math.floor((attempts * pollInterval) / 1000 / 60)} minutes). The video may still be processing on Chillin's servers. Render ID: ${renderData.renderId}`);
+          return;
         }
 
         try {
@@ -158,6 +153,15 @@ export function FinalReviewPanel({
           const statusResult = await statusResponse.json();
           
           console.log(`Status check ${attempts + 1}:`, statusResult);
+
+          // Handle timeout response from API (when Chillin is slow)
+          if (statusResult.timeout) {
+            console.log('Status check timed out, but render may still be processing');
+            setRenderProgress(Math.min(50 + (attempts * 0.2), 90)); // Gradually increase progress
+            attempts++;
+            setTimeout(pollStatus, pollInterval);
+            return;
+          }
 
           if (statusResult.status === 'completed' && statusResult.outputUrl) {
             console.log('Render completed:', statusResult.outputUrl);

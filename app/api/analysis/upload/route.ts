@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
 // Helper function to wait for file to be active
 async function waitForFileActive(fileUri: string, maxAttempts = 60): Promise<boolean> {
@@ -69,32 +70,80 @@ export async function POST(request: NextRequest) {
     console.log(`Uploading video: ${file.name}, size: ${file.size} bytes (${(file.size / 1024 / 1024).toFixed(1)} MB)`);
     const uploadStartTime = Date.now();
 
-    // Create form data for Gemini
+    // Prepare for parallel uploads
     const geminiFormData = new FormData();
     geminiFormData.append('file', file);
 
-    // Upload to Gemini Files API
-    console.log('Starting upload to Gemini API...');
-    const uploadResponse = await fetch(
-      `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${process.env.GEMINI_API_KEY}`,
+    // Initialize Supabase client with service key for server-side operations
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_KEY!,
       {
-        method: 'POST',
-        body: geminiFormData,
+        auth: {
+          persistSession: false
+        }
       }
     );
 
-    if (!uploadResponse.ok) {
-      const error = await uploadResponse.text();
-      console.error('Gemini upload error:', error);
-      return NextResponse.json(
-        { error: 'Failed to upload video to Gemini' },
-        { status: 500 }
-      );
+    // Generate unique filename for Supabase
+    const timestamp = Date.now();
+    const fileExtension = file.name.split('.').pop() || 'mp4';
+    const supabaseFileName = `uploads/video_${timestamp}.${fileExtension}`;
+
+    // Convert File to ArrayBuffer for Supabase
+    const arrayBuffer = await file.arrayBuffer();
+
+    // Start both uploads in parallel
+    console.log('Starting parallel uploads to Gemini and Supabase...');
+    const [geminiResult, supabaseResult] = await Promise.all([
+      // Upload to Gemini
+      fetch(
+        `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${process.env.GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          body: geminiFormData,
+        }
+      ).then(async (response) => {
+        if (!response.ok) {
+          const error = await response.text();
+          console.error('Gemini upload error:', error);
+          throw new Error('Failed to upload video to Gemini');
+        }
+        return response.json();
+      }),
+      
+      // Upload to Supabase
+      supabaseAdmin.storage
+        .from('videos')
+        .upload(supabaseFileName, arrayBuffer, {
+          contentType: file.type,
+          upsert: false
+        })
+    ]);
+
+    const uploadTime = Date.now() - uploadStartTime;
+    console.log(`Parallel upload successful (took ${uploadTime}ms / ${(uploadTime/1000).toFixed(1)}s)`);
+    console.log(`- Gemini: ${geminiResult.file.name}`);
+    console.log(`- Supabase: ${supabaseFileName}`);
+
+    // Check if Supabase upload was successful
+    if (supabaseResult.error) {
+      console.error('Supabase upload error:', supabaseResult.error);
+      // Continue anyway - Gemini upload succeeded, we can upload to Supabase later if needed
+      console.warn('Supabase upload failed, but continuing with Gemini analysis');
     }
 
-    const result = await uploadResponse.json();
-    const uploadTime = Date.now() - uploadStartTime;
-    console.log(`Upload successful: ${result.file.name} (took ${uploadTime}ms / ${(uploadTime/1000).toFixed(1)}s)`);
+    // Get public URL for Supabase video
+    let supabaseUrl = null;
+    if (!supabaseResult.error) {
+      const { data: publicUrlData } = supabaseAdmin.storage
+        .from('videos')
+        .getPublicUrl(supabaseFileName);
+      supabaseUrl = publicUrlData.publicUrl;
+      console.log('Supabase public URL:', supabaseUrl);
+    }
+
+    const result = geminiResult;
     
     // Wait for file to become active
     console.log('Waiting for file to become active...');
@@ -123,6 +172,8 @@ export async function POST(request: NextRequest) {
       fileName: result.file.displayName,
       sizeBytes: result.file.sizeBytes,
       mimeType: result.file.mimeType,
+      supabaseUrl: supabaseUrl,  // Include the Supabase URL for later use
+      supabaseFileName: supabaseFileName
     });
 
   } catch (error) {

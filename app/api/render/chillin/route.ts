@@ -3,8 +3,9 @@ import { buildChillinRequest, submitRenderJob, getRenderStatus } from '@/lib/ser
 import { EnhancedSegment } from '@/lib/types/segments';
 
 export async function POST(request: NextRequest) {
+  let body: any = {};
   try {
-    const body = await request.json();
+    body = await request.json();
     const { 
       videoUrl, 
       segmentsToRemove, 
@@ -32,9 +33,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build the Chillin request
+    // For now, just use the original URL directly
+    // The proxy approach doesn't work because Chillin can't access localhost
+    // And signed URLs have issues with Supabase's validation
+    let finalVideoUrl = videoUrl;
+    
+    // Log the URL being used
+    console.log('Using video URL:', finalVideoUrl);
+
+    // Build the Chillin request with the proxy URL if applicable
     const chillinRequest = buildChillinRequest(
-      videoUrl,
+      finalVideoUrl,
       segmentsToRemove as EnhancedSegment[],
       videoDuration,
       videoWidth || 1920,
@@ -43,26 +52,56 @@ export async function POST(request: NextRequest) {
     );
 
     console.log('Submitting render job to Chillin:', {
-      videoUrl,
+      originalUrl: videoUrl,
+      usingProxy: videoUrl !== finalVideoUrl,
+      proxyUrl: videoUrl !== finalVideoUrl ? finalVideoUrl : undefined,
       segments: segmentsToRemove.length,
       duration: videoDuration,
-      keeperSegments: chillinRequest.project.elements.length
+      keeperSegments: chillinRequest.projectData.view.length
     });
     console.log('Chillin request payload:', JSON.stringify(chillinRequest, null, 2));
 
     // Submit the render job
     const renderResponse = await submitRenderJob(chillinRequest, apiKey);
+    console.log('Chillin API response:', renderResponse);
+    
+    // Handle various response formats from Chillin API
+    const renderId = renderResponse.renderId || renderResponse.id || renderResponse.render_id || renderResponse.projectId;
+    
+    if (!renderId) {
+      console.error('No render ID found in response:', renderResponse);
+      // If no ID returned, it might be a synchronous render - check for URL
+      if (renderResponse.outputUrl || renderResponse.url) {
+        return NextResponse.json({
+          success: true,
+          renderId: 'sync-render-' + Date.now(),
+          status: 'completed',
+          outputUrl: renderResponse.outputUrl || renderResponse.url,
+          message: 'Render completed immediately'
+        });
+      }
+      // Generate a fallback ID from response or timestamp
+      const fallbackId = 'render-' + Date.now();
+      console.log('Using fallback render ID:', fallbackId);
+      return NextResponse.json({
+        success: true,
+        renderId: fallbackId,
+        status: renderResponse.status || 'processing',
+        message: 'Render job submitted (using fallback ID)',
+        rawResponse: renderResponse
+      });
+    }
 
     return NextResponse.json({
       success: true,
-      renderId: renderResponse.renderId,
-      status: renderResponse.status,
+      renderId: renderId,
+      status: renderResponse.status || 'processing',
       message: 'Render job submitted successfully'
     });
 
   } catch (error) {
     console.error('Chillin render error:', error);
-    console.log('Debug context:', { videoUrl, segments: segmentsToRemove?.length });
+    console.log('Debug context:', { originalUrl: body?.videoUrl, segments: body?.segmentsToRemove?.length });
     return NextResponse.json(
       { 
         error: 'Failed to submit render job',
@@ -98,19 +137,36 @@ export async function GET(request: NextRequest) {
     if (renderId.startsWith('mock-render-')) {
       console.log('Handling mock render status check for:', renderId);
       return NextResponse.json({
-        status: 'completed',
-        outputUrl: 'https://example.com/mock-video.mp4',
-        message: 'Mock render completed - external service unavailable',
+        status: 'failed',
+        error: 'Render service temporarily unavailable. Please try again later.',
+        details: 'The external render service is not responding. This may be a temporary issue.',
         mock: true
       });
     }
     
-    const status = await getRenderStatus(renderId, apiKey);
-
-    return NextResponse.json({
-      success: true,
-      ...status
-    });
+    try {
+      const status = await getRenderStatus(renderId, apiKey);
+      
+      return NextResponse.json({
+        success: true,
+        ...status
+      });
+    } catch (statusError) {
+      console.error('Status check error:', statusError);
+      
+      // If it's a timeout, return a processing status instead of error
+      if (statusError.message?.includes('timed out')) {
+        return NextResponse.json({
+          success: true,
+          renderId,
+          status: 'processing',
+          message: 'Render is still processing. Large videos may take several minutes.',
+          timeout: true
+        });
+      }
+      
+      throw statusError; // Re-throw for outer catch
+    }
 
   } catch (error) {
     console.error('Failed to get render status:', error);

@@ -28,6 +28,7 @@ interface AnalysisResult {
     timeRemoved: number;
     segmentCount: number;
   };
+  supabaseUrl?: string;  // Pre-uploaded Supabase URL
 }
 
 interface RecentProject {
@@ -287,6 +288,7 @@ export default function DashboardPage() {
       setAnalysis({
         segmentsToRemove: enhancedSegments,
         summary: enhancedResult?.summary || analyzeResult.analysis.summary,
+        supabaseUrl: uploadResult.supabaseUrl,  // Store the pre-uploaded Supabase URL
       });
       setVisibleSegments(enhancedSegments);
       setView('analysis');
@@ -355,6 +357,7 @@ export default function DashboardPage() {
               segments={analysis.segmentsToRemove}
               videoUrl={videoUrl}
               videoDuration={videoDuration}
+              supabaseUrl={analysis.supabaseUrl}
               onExport={(format, segmentsToRemove) => {
                 if (format === 'edl') {
                   const content = generateEDL(segmentsToRemove, videoDuration, file?.name || 'video.mp4');
