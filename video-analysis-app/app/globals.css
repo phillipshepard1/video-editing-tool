@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8f9fa;  /* Light gray background */
+  --foreground: #2d3748;  /* Dark text for readability */
+  --terminal-green: #38a169;
+  --terminal-blue: #3182ce;
+  --terminal-yellow: #d69e2e;
+  --terminal-red: #e53e3e;
+  --terminal-purple: #805ad5;
+  --terminal-cyan: #319795;
+  --border-color: #e2e8f0;
+  --secondary-bg: #ffffff;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-mono);  /* Use monospace for terminal feel */
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Light terminal-style scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a0aec0;
+}
+
+/* Terminal cursor animation */
+.terminal-cursor::after {
+  content: '█';
+  animation: blink 1s infinite;
+  color: var(--terminal-green);
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}

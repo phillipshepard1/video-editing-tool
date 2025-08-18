@@ -1,0 +1,609 @@
+'use client';
+
+import { EnhancedSegment } from '@/lib/types/segments';
+import { TakeCluster, ClusterSelection } from '@/lib/clustering';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Download, FileText, Film, FileCode, Video, Loader2, CheckCircle, AlertCircle, Upload, History, ExternalLink } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { getVideoFileForUpload, uploadVideoToSupabase } from '@/lib/video-upload';
+
+interface FinalReviewPanelProps {
+  finalSegmentsToRemove: EnhancedSegment[];
+  clusters: TakeCluster[];
+  clusterSelections: ClusterSelection[];
+  originalDuration: number;
+  finalDuration: number;
+  onExport: (format: 'edl' | 'fcpxml' | 'premiere', segmentsToRemove: EnhancedSegment[]) => void;
+  videoUrl: string | null;
+  videoRef: React.RefObject<HTMLVideoElement>;
+  videoDuration?: number;
+  supabaseUrl?: string;  // Pre-uploaded Supabase URL
+}
+
+export function FinalReviewPanel({
+  finalSegmentsToRemove,
+  clusters,
+  clusterSelections,
+  originalDuration,
+  finalDuration,
+  onExport,
+  videoUrl,
+  videoRef,
+  videoDuration,
+  supabaseUrl
+}: FinalReviewPanelProps) {
+  const [renderStatus, setRenderStatus] = useState<'idle' | 'uploading' | 'rendering' | 'completed' | 'error'>('idle');
+  const [renderProgress, setRenderProgress] = useState(0);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null);
+  const [renderId, setRenderId] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [pastRenders, setPastRenders] = useState<Array<{id: string; url: string; timestamp: number; duration?: number}>>([]);
+  const [showPastRenders, setShowPastRenders] = useState(false);
+  const timeRemoved = originalDuration - finalDuration;
+  const reductionPercentage = originalDuration > 0 
+    ? ((timeRemoved / originalDuration) * 100).toFixed(1) 
+    : '0';
+  
+  const clustersProcessed = clusterSelections.length;
+  const segmentsRemoved = finalSegmentsToRemove.length;
+
+  // Load past renders from localStorage on mount
+  useEffect(() => {
+    const loadPastRenders = () => {
+      try {
+        const stored = localStorage.getItem('video_past_renders');
+        if (stored) {
+          const renders = JSON.parse(stored);
+          // Filter out renders older than 7 days
+          const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+          const validRenders = renders.filter((r: any) => r.timestamp > weekAgo);
+          setPastRenders(validRenders);
+          // Update localStorage with filtered renders
+          if (validRenders.length !== renders.length) {
+            localStorage.setItem('video_past_renders', JSON.stringify(validRenders));
+          }
+        }
+      } catch (error) {
+        console.error('Error loading past renders:', error);
+      }
+    };
+    loadPastRenders();
+  }, []);
+
+  // Save render to localStorage when completed
+  const savePastRender = (renderUrl: string, id: string) => {
+    try {
+      const newRender = {
+        id,
+        url: renderUrl,
+        timestamp: Date.now(),
+        duration: finalDuration
+      };
+      const updatedRenders = [newRender, ...pastRenders].slice(0, 10); // Keep last 10 renders
+      setPastRenders(updatedRenders);
+      localStorage.setItem('video_past_renders', JSON.stringify(updatedRenders));
+    } catch (error) {
+      console.error('Error saving past render:', error);
+    }
+  };
+
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = (seconds % 60).toFixed(0).padStart(2, '0');
+    return `${mins.toString().padStart(2, '0')}:${secs}`;
+  };
+
+  const parseTimeToSeconds = (timeStr: string): number => {
+    const parts = timeStr.split(':');
+    if (parts.length === 2) {
+      return parseInt(parts[0]) * 60 + parseFloat(parts[1]);
+    }
+    return parseFloat(timeStr);
+  };
+
+  const handleRenderVideo = async () => {
+    if (!videoUrl) {
+      setRenderError('No video URL available');
+      return;
+    }
+
+    setRenderError(null);
+    setRenderProgress(0);
+    setUploadProgress(0);
+
+    try {
+      let publicUrl: string;
+      
+      // Check if we already have a Supabase URL from the initial upload
+      if (supabaseUrl) {
+        console.log('Using pre-uploaded Supabase URL:', supabaseUrl);
+        publicUrl = supabaseUrl;
+        setUploadProgress(100);  // Show as already uploaded
+        setRenderStatus('rendering');
+      } else {
+        // Fallback: Upload video to Supabase if not already uploaded
+        console.log('No pre-uploaded URL, uploading to Supabase now...');
+        setRenderStatus('uploading');
+        
+        const videoFile = await getVideoFileForUpload(videoUrl, 'original_video.mp4');
+        console.log('Video file prepared:', videoFile.name, videoFile.size);
+        const fileSizeMB = videoFile.size / (1024 * 1024);
+        
+        console.log(`Processing video file (${fileSizeMB.toFixed(1)}MB): Uploading to Supabase...`);
+        
+        const uploadResult = await uploadVideoToSupabase(videoFile, (progress) => {
+          setUploadProgress(progress.percentage);
+          console.log('Upload progress:', progress.percentage + '%');
+        });
+        
+        console.log('Video uploaded to Supabase:', uploadResult.publicUrl);
+        publicUrl = uploadResult.publicUrl;
+        setUploadProgress(100);
+        setRenderStatus('rendering');
+      }
+      
+      // Use URL-based rendering (no file size limits)
+      const response = await fetch('/api/render/chillin', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          videoUrl: publicUrl,  // Use the publicUrl (either pre-uploaded or just uploaded)
+          segmentsToRemove: finalSegmentsToRemove,
+          videoDuration: videoDuration || originalDuration,
+          videoWidth: 1920,
+          videoHeight: 1080,
+          fps: 30
+        })
+      });
+      
+      const renderData = await response.json();
+      console.log('URL-based render job submitted:', renderData);
+
+      if (!renderData || renderData.error) {
+        const errorMessage = renderData?.error || 'Failed to submit render job';
+        console.error('Render submission failed:', {
+          renderData,
+          errorMessage,
+          videoUrl: publicUrl,
+          segmentsCount: finalSegmentsToRemove.length
+        });
+        throw new Error(errorMessage);
+      }
+
+      setRenderId(renderData.renderId);
+      setRenderStatus('rendering');
+      setRenderProgress(10);
+
+      // Poll for status
+      let attempts = 0;
+      const maxAttempts = 180; // 15 minutes max for large videos
+      const pollInterval = 5000; // 5 seconds
+
+      const pollStatus = async () => {
+        if (attempts >= maxAttempts) {
+          console.error('Render timeout after', attempts, 'attempts');
+          setRenderStatus('timeout');
+          setRenderProgress(0);
+          alert(`Render is taking longer than expected (${Math.floor((attempts * pollInterval) / 1000 / 60)} minutes). The video may still be processing on Chillin's servers. Render ID: ${renderData.renderId}`);
+          return;
+        }
+
+        try {
+          const statusResponse = await fetch(`/api/render/chillin?renderId=${renderData.renderId}`);
+          const statusResult = await statusResponse.json();
+          
+          console.log(`Status check ${attempts + 1}:`, statusResult);
+
+          // Handle timeout response from API (when Chillin is slow)
+          if (statusResult.timeout) {
+            console.log('Status check timed out, but render may still be processing');
+            setRenderProgress(Math.min(50 + (attempts * 0.2), 90)); // Gradually increase progress
+            attempts++;
+            setTimeout(pollStatus, pollInterval);
+            return;
+          }
+
+          if (statusResult.status === 'completed' && statusResult.outputUrl) {
+            console.log('Render completed:', statusResult.outputUrl);
+            setRenderStatus('completed');
+            setRenderProgress(100);
+            setRenderedVideoUrl(statusResult.outputUrl);
+            
+            // Save to past renders
+            if (statusResult.outputUrl && renderId) {
+              savePastRender(statusResult.outputUrl, renderId);
+            }
+            
+            // Download the video
+            const link = document.createElement('a');
+            link.href = statusResult.outputUrl;
+            link.download = `edited_video_${Date.now()}.mp4`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+          } else if (statusResult.status === 'failed') {
+            console.error('Render failed:', statusResult);
+            throw new Error(statusResult.error || 'Render failed');
+          } else if (statusResult.status === 'error') {
+            console.error('Render error:', statusResult);
+            throw new Error(statusResult.error || statusResult.details || 'Render error');
+          } else {
+            // Still processing
+            attempts++;
+            console.log(`Still processing... attempt ${attempts}/${maxAttempts}`);
+            setRenderProgress(Math.min(90, 10 + (attempts * 80 / maxAttempts)));
+            setTimeout(pollStatus, pollInterval);
+          }
+        } catch (fetchError) {
+          console.error('Error checking render status:', fetchError);
+          attempts++;
+          if (attempts < maxAttempts) {
+            console.log('Retrying status check...');
+            setTimeout(pollStatus, pollInterval);
+          } else {
+            throw new Error('Failed to check render status: ' + (fetchError as Error).message);
+          }
+        }
+      };
+
+      // Start polling
+      setTimeout(pollStatus, pollInterval);
+
+    } catch (error) {
+      console.error('Render error:', error);
+      setRenderStatus('error');
+      setRenderError(error instanceof Error ? error.message : 'Failed to render video');
+      
+      // Log additional context for debugging
+      console.log('Debug info:', {
+        videoUrl,
+        segmentsCount: finalSegmentsToRemove.length,
+        videoDuration: videoDuration || originalDuration,
+        renderId
+      });
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-12 gap-4">
+      {/* Left Panel - Summary Stats */}
+      <div className="col-span-3">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center">
+              <span className="mr-2">📊</span>
+              Final Summary
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <div className="text-xs text-gray-500">Clusters Processed</div>
+              <div className="text-2xl font-bold text-green-600">
+                {clustersProcessed}
+              </div>
+            </div>
+            
+            <div>
+              <div className="text-xs text-gray-500">Segments Removed</div>
+              <div className="text-2xl font-bold text-red-600">
+                {segmentsRemoved}
+              </div>
+            </div>
+            
+            <div>
+              <div className="text-xs text-gray-500">Time Saved</div>
+              <div className="text-2xl font-bold text-cyan-600">
+                {formatTime(timeRemoved)}
+              </div>
+            </div>
+            
+            <div>
+              <div className="text-xs text-gray-500">Reduction</div>
+              <div className="text-2xl font-bold">
+                {reductionPercentage}%
+              </div>
+            </div>
+            
+            <div className="border-t pt-4">
+              <div className="font-semibold text-sm mb-3">Export Options</div>
+              <div className="space-y-2">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => onExport('edl', finalSegmentsToRemove)}
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Export EDL
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => onExport('fcpxml', finalSegmentsToRemove)}
+                >
+                  <FileCode className="w-4 h-4 mr-2" />
+                  Export FCPXML
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => onExport('premiere', finalSegmentsToRemove)}
+                >
+                  <Film className="w-4 h-4 mr-2" />
+                  Export Premiere XML
+                </Button>
+                
+                {/* Past Renders Button - Only show if there are past renders */}
+                {pastRenders.length > 0 && (
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start mt-2 border-blue-200 hover:bg-blue-50"
+                    onClick={() => setShowPastRenders(!showPastRenders)}
+                  >
+                    <History className="w-4 h-4 mr-2" />
+                    Past Renders ({pastRenders.length})
+                  </Button>
+                )}
+                
+                <div className="border-t mt-3 pt-3">
+                  <Button
+                    className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white"
+                    onClick={handleRenderVideo}
+                    disabled={renderStatus !== 'idle' && renderStatus !== 'completed' && renderStatus !== 'error'}
+                  >
+                    {renderStatus === 'idle' && (
+                      <>
+                        <Video className="w-4 h-4 mr-2" />
+                        Render Video
+                      </>
+                    )}
+                    {renderStatus === 'uploading' && (
+                      <>
+                        <Upload className="w-4 h-4 mr-2 animate-spin" />
+                        Uploading... ({uploadProgress}%)
+                      </>
+                    )}
+                    {renderStatus === 'rendering' && (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Rendering ({renderProgress}%)
+                      </>
+                    )}
+                    {renderStatus === 'completed' && (
+                      <>
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Render Complete
+                      </>
+                    )}
+                    {renderStatus === 'error' && (
+                      <>
+                        <AlertCircle className="w-4 h-4 mr-2" />
+                        Retry Render
+                      </>
+                    )}
+                  </Button>
+                  
+                  {renderError && (
+                    <div className="mt-2 text-xs text-red-600">
+                      {renderError}
+                    </div>
+                  )}
+                  
+                  {(renderStatus === 'uploading' || renderStatus === 'rendering') && (
+                    <div className="mt-2">
+                      <div className="text-xs text-gray-500 mb-1">
+                        {renderStatus === 'uploading' ? 'Uploading video...' : 'Rendering video...'}
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full transition-all"
+                          style={{ width: `${renderStatus === 'uploading' ? uploadProgress : renderProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="mt-2 text-xs text-gray-500">
+                    Powered by Chillin.online
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Center & Right - Final Preview */}
+      <div className="col-span-9">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Final Cut Preview</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {/* Video Preview */}
+            <div className="aspect-video bg-black rounded-lg overflow-hidden mb-4">
+              {videoUrl ? (
+                <video
+                  ref={videoRef}
+                  src={videoUrl}
+                  className="w-full h-full"
+                  controls
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-400">
+                  No video loaded
+                </div>
+              )}
+            </div>
+
+            {/* Timeline Visualization */}
+            <div className="mb-4">
+              <div className="text-sm text-gray-600 mb-2">Edit Timeline</div>
+              <div className="relative h-16 bg-gray-100 rounded-lg overflow-hidden">
+                {/* Original timeline */}
+                <div className="absolute inset-0 flex items-center px-2">
+                  <div className="w-full h-8 bg-gray-300 rounded relative">
+                    {/* Removed segments */}
+                    {finalSegmentsToRemove.map((segment, index) => {
+                      const startPercent = (parseTimeToSeconds(segment.startTime) / originalDuration) * 100;
+                      const widthPercent = (segment.duration / originalDuration) * 100;
+                      
+                      return (
+                        <div
+                          key={`${segment.id}-${index}`}
+                          className="absolute h-full bg-red-500 opacity-50"
+                          style={{
+                            left: `${startPercent}%`,
+                            width: `${widthPercent}%`
+                          }}
+                          title={`${segment.startTime} - ${segment.endTime}: ${segment.reason}`}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Summary Stats */}
+            <div className="flex justify-between items-center pt-4 border-t">
+              <div className="text-sm">
+                <span className="text-gray-500">Final Duration:</span>
+                <span className="font-bold ml-2">
+                  {formatTime(finalDuration)} / {formatTime(originalDuration)}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline">
+                  ← Back to Edit
+                </Button>
+                <Button 
+                  className="bg-green-500 hover:bg-green-600"
+                  onClick={() => onExport('fcpxml', finalSegmentsToRemove)}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Export Final Cut
+                </Button>
+              </div>
+            </div>
+
+            {/* Breakdown of Edits */}
+            <div className="mt-6 pt-4 border-t">
+              <h3 className="text-sm font-semibold mb-3">Edit Breakdown</h3>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <div className="text-gray-500 mb-2">Clusters Resolved</div>
+                  {clusters.map((cluster) => {
+                    const selection = clusterSelections.find(s => s.clusterId === cluster.id);
+                    return (
+                      <div key={cluster.id} className="flex justify-between py-1">
+                        <span className="text-xs">{cluster.name}</span>
+                        <span className="text-xs text-green-600">
+                          {selection?.removedSegments.length || 0} removed
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div>
+                  <div className="text-gray-500 mb-2">Categories Removed</div>
+                  {Object.entries(
+                    finalSegmentsToRemove.reduce((acc, seg) => {
+                      acc[seg.category] = (acc[seg.category] || 0) + 1;
+                      return acc;
+                    }, {} as Record<string, number>)
+                  ).map(([category, count]) => (
+                    <div key={category} className="flex justify-between py-1">
+                      <span className="text-xs capitalize">{category.replace('_', ' ')}</span>
+                      <span className="text-xs text-red-600">{count} segments</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        {/* Past Renders Panel */}
+        {showPastRenders && pastRenders.length > 0 && (
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <History className="w-5 h-5" />
+                  Past Renders
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowPastRenders(false)}
+                >
+                  ✕
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3 max-h-60 overflow-y-auto">
+                {pastRenders.map((render, index) => {
+                  const date = new Date(render.timestamp);
+                  const timeAgo = getTimeAgo(render.timestamp);
+                  return (
+                    <div key={render.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-900">
+                          Render #{pastRenders.length - index}
+                        </p>
+                        <p className="text-xs text-gray-600">
+                          {timeAgo} • {date.toLocaleDateString()} {date.toLocaleTimeString()}
+                        </p>
+                        {render.duration && (
+                          <p className="text-xs text-gray-500">
+                            Duration: {Math.floor(render.duration / 60)}:{(render.duration % 60).toFixed(0).padStart(2, '0')}
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.open(render.url, '_blank')}
+                        className="ml-2"
+                      >
+                        <ExternalLink className="w-4 h-4 mr-1" />
+                        View
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function parseTimeToSeconds(timeStr: string): number {
+  const parts = timeStr.split(':');
+  if (parts.length === 2) {
+    return parseInt(parts[0]) * 60 + parseFloat(parts[1]);
+  }
+  return parseFloat(timeStr);
+}
+
+// Helper function to get relative time
+function getTimeAgo(timestamp: number): string {
+  const seconds = Math.floor((Date.now() - timestamp) / 1000);
+  
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days > 1 ? 's' : ''} ago`;
+}

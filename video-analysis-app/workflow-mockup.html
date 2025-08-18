@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Step Video Editing Workflow</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --background: #f8f9fa;
+            --foreground: #2d3748;
+            --terminal-green: #38a169;
+            --terminal-blue: #3182ce;
+            --terminal-yellow: #d69e2e;
+            --terminal-red: #e53e3e;
+            --terminal-purple: #805ad5;
+            --terminal-cyan: #319795;
+            --border-color: #e2e8f0;
+            --secondary-bg: #ffffff;
+        }
+        
+        body {
+            background: var(--background);
+            color: var(--foreground);
+            font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+            font-size: 13px;
+        }
+        
+        .step-indicator {
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        
+        .step {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #e2e8f0;
+            color: #718096;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        
+        .step.active {
+            background: var(--terminal-green);
+            color: white;
+        }
+        
+        .step.completed {
+            background: var(--terminal-blue);
+            color: white;
+        }
+        
+        .step-line {
+            height: 2px;
+            background: #e2e8f0;
+            flex: 1;
+            margin: 0 10px;
+        }
+        
+        .step-line.completed {
+            background: var(--terminal-blue);
+        }
+        
+        .panel {
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+        }
+        
+        .cluster-item {
+            background: #f7fafc;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .cluster-item:hover {
+            border-color: var(--terminal-green);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .cluster-item.selected {
+            border-color: var(--terminal-green);
+            background: #f0fff4;
+        }
+        
+        .segment-item {
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 8px;
+            position: relative;
+        }
+        
+        .remove-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: #fed7d7;
+            color: var(--terminal-red);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+        
+        .keep-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: #c6f6d5;
+            color: var(--terminal-green);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+        
+        .video-preview {
+            background: #000;
+            aspect-ratio: 16/9;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+        }
+        
+        .btn-primary {
+            background: var(--terminal-green);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        
+        .btn-primary:hover {
+            background: #2f855a;
+        }
+        
+        .btn-secondary {
+            background: white;
+            color: var(--foreground);
+            padding: 8px 16px;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+            cursor: pointer;
+        }
+        
+        .btn-secondary:hover {
+            background: #f7fafc;
+        }
+        
+        .timeline {
+            height: 40px;
+            background: linear-gradient(to right, #e2e8f0 0%, #e2e8f0 100%);
+            border-radius: 4px;
+            position: relative;
+            margin: 10px 0;
+        }
+        
+        .timeline-segment {
+            position: absolute;
+            height: 100%;
+            background: rgba(229, 62, 62, 0.5);
+            border: 1px solid var(--terminal-red);
+        }
+        
+        .filter-option {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            margin: 4px 0;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .filter-option:hover {
+            background: #f7fafc;
+        }
+        
+        .filter-option input {
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mx-auto px-4 py-6 max-w-7xl">
+        <!-- Header -->
+        <div class="mb-6">
+            <h1 class="text-2xl font-bold mb-2" style="color: var(--terminal-green);">AI VIDEO ANALYSIS</h1>
+            <p class="text-gray-600">Upload video for Gemini AI analysis to identify content that can be removed</p>
+        </div>
+
+        <!-- Step Indicator -->
+        <div class="step-indicator">
+            <div class="flex items-center">
+                <div class="step completed" id="step1">1</div>
+                <div class="step-line completed"></div>
+                <div class="step active" id="step2">2</div>
+                <div class="step-line"></div>
+                <div class="step" id="step3">3</div>
+                <div class="ml-6 flex-1">
+                    <div class="flex justify-between">
+                        <div>
+                            <div class="font-semibold" style="color: var(--terminal-blue);">Step 1: Handle Clusters</div>
+                            <div class="text-xs text-gray-500">Identify repeated takes</div>
+                        </div>
+                        <div>
+                            <div class="font-semibold" style="color: var(--terminal-green);">Step 2: Smart Filtering</div>
+                            <div class="text-xs text-gray-500">Fine-tune edits</div>
+                        </div>
+                        <div>
+                            <div class="font-semibold text-gray-400">Step 3: Final Review</div>
+                            <div class="text-xs text-gray-500">Export your video</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analysis Stats -->
+        <div class="panel mb-4">
+            <div class="flex justify-between items-center">
+                <div class="text-sm">
+                    <span class="text-gray-600">Analysis Complete</span>
+                    <button class="ml-4 text-xs px-2 py-1 rounded" style="background: #e6fffa; color: var(--terminal-cyan);">
+                        🔄 New Analysis
+                    </button>
+                </div>
+                <div class="flex gap-6 text-sm">
+                    <div>
+                        <span class="text-gray-500">Original Duration</span>
+                        <span class="font-bold ml-2">01:50</span>
+                    </div>
+                    <div>
+                        <span class="text-gray-500">Final Duration</span>
+                        <span class="font-bold ml-2">00:46</span>
+                    </div>
+                    <div>
+                        <span class="text-gray-500">Time Removed</span>
+                        <span class="font-bold ml-2" style="color: var(--terminal-red);">01:04</span>
+                    </div>
+                    <div>
+                        <span class="text-gray-500">Segments Found</span>
+                        <span class="font-bold ml-2">8</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content Grid -->
+        <div class="grid grid-cols-12 gap-4">
+            
+            <!-- STEP 1: CLUSTERING VIEW -->
+            <div id="step1-content" style="display: none;" class="col-span-12 grid grid-cols-12 gap-4">
+                <!-- Left Panel - Cluster List -->
+                <div class="col-span-3">
+                    <div class="panel">
+                        <h3 class="font-semibold mb-3" style="color: var(--terminal-purple);">🎬 Detected Clusters</h3>
+                        <div class="text-xs text-gray-500 mb-3">3 cluster groups found</div>
+                        
+                        <div class="cluster-item selected">
+                            <div class="font-semibold text-sm">Opening Statement</div>
+                            <div class="text-xs text-gray-500">3 attempts • 00:28 - 01:01</div>
+                            <div class="text-xs mt-1" style="color: var(--terminal-green);">✓ Winner selected</div>
+                        </div>
+                        
+                        <div class="cluster-item">
+                            <div class="font-semibold text-sm">Product Feature</div>
+                            <div class="text-xs text-gray-500">2 attempts • 01:17 - 01:39</div>
+                            <div class="text-xs mt-1 text-gray-400">⚠️ Needs review</div>
+                        </div>
+                        
+                        <div class="cluster-item">
+                            <div class="font-semibold text-sm">Closing Remarks</div>
+                            <div class="text-xs text-gray-500">2 attempts • 02:13 - 02:44</div>
+                            <div class="text-xs mt-1 text-gray-400">⚠️ Needs review</div>
+                        </div>
+                        
+                        <div class="mt-4 pt-3 border-t">
+                            <button class="btn-primary w-full">Accept All Selections</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Center - Cluster Details -->
+                <div class="col-span-5">
+                    <div class="panel">
+                        <h3 class="font-semibold mb-3">Cluster: Opening Statement</h3>
+                        
+                        <div class="mb-3">
+                            <div class="text-xs text-gray-500 mb-2">FAILED ATTEMPTS (TO REMOVE):</div>
+                            <div class="segment-item">
+                                <div class="remove-badge">Remove</div>
+                                <div class="font-semibold text-sm">Take 1 • 00:28.2 - 00:43.5</div>
+                                <div class="text-xs text-gray-600 mt-1">
+                                    A series of false starts, restarts, and self-corrections.
+                                </div>
+                            </div>
+                            <div class="segment-item">
+                                <div class="remove-badge">Remove</div>
+                                <div class="font-semibold text-sm">Take 2 • 00:43.5 - 00:47.8</div>
+                                <div class="text-xs text-gray-600 mt-1">
+                                    Multiple false starts and restarting the sentence.
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <div class="text-xs text-gray-500 mb-2">WINNING TAKE (TO KEEP):</div>
+                            <div class="segment-item" style="border-color: var(--terminal-green); background: #f0fff4;">
+                                <div class="keep-badge">Keep</div>
+                                <div class="font-semibold text-sm">Take 3 • 00:47.9 - 01:01.6</div>
+                                <div class="text-xs text-gray-600 mt-1">
+                                    Clean delivery - no issues detected
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex gap-2 mt-4">
+                            <button class="btn-secondary">Select Different Winner</button>
+                            <button class="btn-primary">Next Cluster →</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Right - Video Preview -->
+                <div class="col-span-4">
+                    <div class="panel">
+                        <h3 class="font-semibold mb-3">Video Preview</h3>
+                        <div class="video-preview mb-3">
+                            <span>VIDEO PLAYER</span>
+                        </div>
+                        <div class="text-xs text-gray-500 mb-2">Comparing Takes:</div>
+                        <div class="grid grid-cols-3 gap-1">
+                            <button class="text-xs py-1 px-2 rounded border" style="border-color: var(--terminal-red);">
+                                Take 1
+                            </button>
+                            <button class="text-xs py-1 px-2 rounded border" style="border-color: var(--terminal-red);">
+                                Take 2
+                            </button>
+                            <button class="text-xs py-1 px-2 rounded border" style="border-color: var(--terminal-green); background: #f0fff4;">
+                                Take 3 ✓
+                            </button>
+                        </div>
+                        <div class="mt-3 flex gap-2">
+                            <button class="btn-secondary text-xs">⏮ Previous</button>
+                            <button class="btn-primary text-xs flex-1">▶ Play</button>
+                            <button class="btn-secondary text-xs">Next ⏭</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 2: SMART FILTERING VIEW (Current UI) -->
+            <div id="step2-content" class="col-span-12 grid grid-cols-12 gap-4">
+                <!-- Left Panel - Smart Filters -->
+                <div class="col-span-3">
+                    <div class="panel">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="font-semibold">🎯 Smart Filters</h3>
+                            <span class="text-xs text-gray-500">Isolated 1/8</span>
+                        </div>
+                        <div class="text-xs text-gray-500 mb-3">Control which segments to review</div>
+                        
+                        <div class="mb-3">
+                            <button class="btn-secondary w-full mb-2 text-sm">Show All</button>
+                            <button class="btn-secondary w-full mb-2 text-sm">Hide All</button>
+                            <button class="btn-secondary w-full text-sm">Reset</button>
+                        </div>
+                        
+                        <div class="font-semibold text-sm mb-2 mt-4">STANDARD CUTS</div>
+                        
+                        <div class="filter-option">
+                            <input type="checkbox" checked>
+                            <span>☑️ Bad Takes</span>
+                            <span class="ml-auto text-xs text-gray-500">2</span>
+                        </div>
+                        
+                        <div class="filter-option">
+                            <input type="checkbox" checked>
+                            <span>⏸ Pauses</span>
+                            <span class="ml-auto text-xs text-gray-500">2</span>
+                        </div>
+                        
+                        <div class="filter-option">
+                            <input type="checkbox" checked>
+                            <span>🔄 False Starts</span>
+                            <span class="ml-auto text-xs text-gray-500">2</span>
+                        </div>
+                        
+                        <div class="filter-option">
+                            <input type="checkbox" checked>
+                            <span>💬 Filler Words</span>
+                            <span class="ml-auto text-xs text-gray-500">2</span>
+                        </div>
+                        
+                        <div class="font-semibold text-sm mb-2 mt-4">OPTIONAL CUTS</div>
+                        <div class="text-xs text-gray-500 mb-2">3 available</div>
+                        
+                        <div class="filter-option">
+                            <input type="checkbox">
+                            <span>♻️ Redundant</span>
+                        </div>
+                        
+                        <div class="filter-option">
+                            <input type="checkbox">
+                            <span>🎯 Tangents</span>
+                            <span class="ml-auto text-xs text-gray-500">1</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Center - Segments to Remove -->
+                <div class="col-span-5">
+                    <div class="panel">
+                        <h3 class="font-semibold mb-3">Segments to Remove (5 of 8)</h3>
+                        <div class="text-xs text-gray-500 mb-3">Clusters already handled in Step 1</div>
+                        
+                        <div class="segment-item">
+                            <div class="remove-badge">Remove</div>
+                            <div class="font-semibold text-sm">00:28.22 - 00:43.57 (15.35s)</div>
+                            <div class="text-xs text-gray-600 mt-1">
+                                A series of false starts, restarts, and self-corrections.
+                            </div>
+                            <div class="text-xs mt-2" style="color: var(--terminal-yellow);">
+                                false_start • 98% confidence
+                            </div>
+                        </div>
+                        
+                        <div class="segment-item">
+                            <div class="remove-badge">Remove</div>
+                            <div class="font-semibold text-sm">01:13.82 - 01:27.26 (13.44s)</div>
+                            <div class="text-xs text-gray-600 mt-1">
+                                Rambling section with repeated phrases and a self-correction.
+                            </div>
+                            <div class="text-xs mt-2" style="color: var(--terminal-purple);">
+                                tangent • 95% confidence
+                            </div>
+                        </div>
+                        
+                        <div class="segment-item">
+                            <div class="remove-badge">Remove</div>
+                            <div class="font-semibold text-sm">01:36.02 - 01:37.49 (1.47s)</div>
+                            <div class="text-xs text-gray-600 mt-1">
+                                Stumble and self-correction ("I'm I mean or...")
+                            </div>
+                            <div class="text-xs mt-2" style="color: var(--terminal-yellow);">
+                                false_start • 92% confidence
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Right - Video Preview -->
+                <div class="col-span-4">
+                    <div class="panel">
+                        <h3 class="font-semibold mb-3">Video Preview</h3>
+                        <div class="video-preview mb-3">
+                            <span>VIDEO PLAYER</span>
+                        </div>
+                        
+                        <div class="timeline">
+                            <div class="timeline-segment" style="left: 25%; width: 15%;"></div>
+                            <div class="timeline-segment" style="left: 65%; width: 12%;"></div>
+                            <div class="timeline-segment" style="left: 82%; width: 5%;"></div>
+                        </div>
+                        
+                        <div class="text-xs text-gray-500 mt-2">
+                            <div>Current Segment</div>
+                            <div class="font-semibold" style="color: var(--terminal-blue);">
+                                00:28.22 - 00:43.57 (15.35s)
+                            </div>
+                            <div class="mt-1">A series of false starts, restarts...</div>
+                        </div>
+                        
+                        <div class="mt-3">
+                            <div class="text-xs text-gray-500 mb-1">Playback Controls</div>
+                            <div class="flex gap-2">
+                                <button class="btn-secondary text-xs">⏮ Previous</button>
+                                <button class="btn-primary text-xs flex-1">▶ Play</button>
+                                <button class="btn-secondary text-xs">Next ⏭</button>
+                                <button class="btn-secondary text-xs">⏪ Restart</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 3: FINAL REVIEW -->
+            <div id="step3-content" style="display: none;" class="col-span-12 grid grid-cols-12 gap-4">
+                <!-- Left Panel - Summary Stats -->
+                <div class="col-span-3">
+                    <div class="panel">
+                        <h3 class="font-semibold mb-3">📊 Final Summary</h3>
+                        
+                        <div class="mb-4">
+                            <div class="text-xs text-gray-500">Clusters Processed</div>
+                            <div class="text-2xl font-bold" style="color: var(--terminal-green);">3</div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <div class="text-xs text-gray-500">Segments Removed</div>
+                            <div class="text-2xl font-bold" style="color: var(--terminal-red);">11</div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <div class="text-xs text-gray-500">Time Saved</div>
+                            <div class="text-2xl font-bold" style="color: var(--terminal-cyan);">01:04</div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <div class="text-xs text-gray-500">Reduction</div>
+                            <div class="text-2xl font-bold">58%</div>
+                        </div>
+                        
+                        <div class="border-t pt-3">
+                            <div class="font-semibold text-sm mb-2">Export Options</div>
+                            <button class="btn-secondary w-full mb-2 text-sm">📄 Export EDL</button>
+                            <button class="btn-secondary w-full mb-2 text-sm">📄 Export FCPXML</button>
+                            <button class="btn-secondary w-full text-sm">📄 Export Premiere XML</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Center & Right - Final Preview -->
+                <div class="col-span-9">
+                    <div class="panel">
+                        <h3 class="font-semibold mb-3">Final Cut Preview</h3>
+                        <div class="video-preview" style="height: 400px;">
+                            <span>FINAL VIDEO PREVIEW</span>
+                        </div>
+                        
+                        <div class="mt-4">
+                            <div class="timeline" style="height: 60px;">
+                                <!-- Visual representation of final cut -->
+                            </div>
+                        </div>
+                        
+                        <div class="flex justify-between items-center mt-4">
+                            <div class="text-sm">
+                                <span class="text-gray-500">Final Duration:</span>
+                                <span class="font-bold ml-2">00:46 / 01:50</span>
+                            </div>
+                            <div class="flex gap-2">
+                                <button class="btn-secondary">← Back to Edit</button>
+                                <button class="btn-primary">Export Final Cut</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation Buttons -->
+        <div class="flex justify-between items-center mt-6 pt-4 border-t">
+            <button class="btn-secondary" onclick="previousStep()">← Previous Step</button>
+            <div class="text-sm text-gray-500">
+                Step <span id="current-step">2</span> of 3
+            </div>
+            <button class="btn-primary" onclick="nextStep()">Next Step →</button>
+        </div>
+    </div>
+
+    <script>
+        let currentStep = 2;
+        
+        function showStep(step) {
+            // Hide all content
+            document.getElementById('step1-content').style.display = 'none';
+            document.getElementById('step2-content').style.display = 'none';
+            document.getElementById('step3-content').style.display = 'none';
+            
+            // Show current step content
+            if (step === 1) {
+                document.getElementById('step1-content').style.display = 'grid';
+            } else if (step === 2) {
+                document.getElementById('step2-content').style.display = 'grid';
+            } else if (step === 3) {
+                document.getElementById('step3-content').style.display = 'grid';
+            }
+            
+            // Update step indicators
+            for (let i = 1; i <= 3; i++) {
+                const stepEl = document.getElementById('step' + i);
+                stepEl.classList.remove('active', 'completed');
+                if (i < step) {
+                    stepEl.classList.add('completed');
+                } else if (i === step) {
+                    stepEl.classList.add('active');
+                }
+            }
+            
+            // Update step lines
+            const stepLines = document.querySelectorAll('.step-line');
+            stepLines.forEach((line, index) => {
+                if (index < step - 1) {
+                    line.classList.add('completed');
+                } else {
+                    line.classList.remove('completed');
+                }
+            });
+            
+            document.getElementById('current-step').textContent = step;
+            currentStep = step;
+        }
+        
+        function nextStep() {
+            if (currentStep < 3) {
+                showStep(currentStep + 1);
+            }
+        }
+        
+        function previousStep() {
+            if (currentStep > 1) {
+                showStep(currentStep - 1);
+            }
+        }
+        
+        // Toggle between steps for demo
+        document.addEventListener('keydown', (e) => {
+            if (e.key === '1') showStep(1);
+            if (e.key === '2') showStep(2);
+            if (e.key === '3') showStep(3);
+        });
+    </script>
+</body>
+</html>
