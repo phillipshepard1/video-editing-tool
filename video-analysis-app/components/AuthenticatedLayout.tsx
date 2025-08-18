@@ -1,12 +1,15 @@
 'use client'
 
 import { useAuth } from '../src/contexts/AuthContext'
-import { LogOut, User, Settings, Video } from 'lucide-react'
+import { LogOut, User, Settings, Video, Home } from 'lucide-react'
 import { useState } from 'react'
+import { useRouter, usePathname } from 'next/navigation'
 import toast from 'react-hot-toast'
 
 export default function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   const { user, signOut } = useAuth()
+  const router = useRouter()
+  const pathname = usePathname()
   const [showUserMenu, setShowUserMenu] = useState(false)
 
   // Get user's display name from metadata or fall back to email
@@ -29,12 +32,26 @@ export default function AuthenticatedLayout({ children }: { children: React.Reac
       <header className="bg-white/80 backdrop-blur-xl border-b border-gray-200 shadow-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4 relative">
-            {/* Logo */}
-            <div className="flex items-center space-x-3">
-              <div className="inline-flex items-center justify-center w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl">
-                <Video className="w-5 h-5 text-white" />
+            {/* Logo and Navigation */}
+            <div className="flex items-center space-x-6">
+              <div className="flex items-center space-x-3">
+                <div className="inline-flex items-center justify-center w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl">
+                  <Video className="w-5 h-5 text-white" />
+                </div>
+                <h1 className="text-xl font-bold text-gray-900">Video Editor Pro</h1>
               </div>
-              <h1 className="text-xl font-bold text-gray-900">Video Editor Pro</h1>
+              
+              {/* Dashboard Button - Always show for easy navigation back */}
+              <button
+                onClick={() => {
+                  // Force a fresh load of the dashboard to reset to main view
+                  window.location.href = '/dashboard';
+                }}
+                className="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white rounded-lg transition-all transform hover:scale-105 cursor-pointer font-medium shadow-md"
+              >
+                <Home className="w-4 h-4" />
+                <span>Dashboard</span>
+              </button>
             </div>
 
             {/* User Menu */}
