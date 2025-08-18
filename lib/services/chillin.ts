@@ -1,5 +1,97 @@
 import { EnhancedSegment } from '@/lib/types/segments';
 
+interface RenderQualityOptions {
+  width?: number;
+  height?: number;
+  fps?: number;
+  quality?: 'low' | 'medium' | 'high' | 'ultra' | 'lossless';
+  maintainAspectRatio?: boolean;
+  upscale?: boolean;
+}
+
+// Quality presets for optimal rendering
+const QUALITY_PRESETS = {
+  low: {
+    maxWidth: 720,
+    maxHeight: 720,
+    fps: 24,
+    description: '720p, good for previews'
+  },
+  medium: {
+    maxWidth: 1280,
+    maxHeight: 1280,
+    fps: 30,
+    description: '1080p, standard quality'
+  },
+  high: {
+    maxWidth: 1920,
+    maxHeight: 1920,
+    fps: 30,
+    description: '1080p+, high quality'
+  },
+  ultra: {
+    maxWidth: 2560,
+    maxHeight: 2560,
+    fps: 60,
+    description: '1440p+, ultra quality'
+  },
+  lossless: {
+    maxWidth: 3840,
+    maxHeight: 3840,
+    fps: 60,
+    description: 'Original resolution, maximum quality'
+  }
+};
+
+// Calculate optimal render dimensions
+function calculateRenderDimensions(
+  originalWidth: number,
+  originalHeight: number,
+  options: RenderQualityOptions = {}
+): { width: number; height: number; fps: number } {
+  const quality = options.quality || 'high';
+  const preset = QUALITY_PRESETS[quality];
+  
+  let targetWidth = options.width || originalWidth;
+  let targetHeight = options.height || originalHeight;
+  let targetFps = options.fps || preset.fps;
+
+  // Apply quality preset limits
+  if (!options.upscale) {
+    // Don't upscale beyond original resolution unless explicitly requested
+    targetWidth = Math.min(targetWidth, originalWidth, preset.maxWidth);
+    targetHeight = Math.min(targetHeight, originalHeight, preset.maxHeight);
+  } else {
+    // Allow upscaling to preset limits
+    targetWidth = Math.min(targetWidth, preset.maxWidth);
+    targetHeight = Math.min(targetHeight, preset.maxHeight);
+  }
+
+  // Maintain aspect ratio if requested
+  if (options.maintainAspectRatio !== false) {
+    const aspectRatio = originalWidth / originalHeight;
+    
+    if (targetWidth / targetHeight > aspectRatio) {
+      // Width is too large, adjust it
+      targetWidth = Math.round(targetHeight * aspectRatio);
+    } else {
+      // Height is too large, adjust it
+      targetHeight = Math.round(targetWidth / aspectRatio);
+    }
+  }
+
+  // Ensure dimensions are within Chillin API limits and even numbers
+  targetWidth = Math.max(720, Math.min(3840, Math.round(targetWidth / 2) * 2));
+  targetHeight = Math.max(720, Math.min(3840, Math.round(targetHeight / 2) * 2));
+  targetFps = Math.max(15, Math.min(60, targetFps));
+
+  return {
+    width: targetWidth,
+    height: targetHeight,
+    fps: targetFps
+  };
+}
+
 export interface ChillinRenderRequest {
   videoUrl: string;
   videoDuration: number;
@@ -148,28 +240,32 @@ function parseTimeToSeconds(timeStr: string): number {
   return parseFloat(timeStr);
 }
 
-// Build Chillin API request
+// Build Chillin API request with enhanced quality options
 export function buildChillinRequest(
   videoUrl: string,
   segmentsToRemove: EnhancedSegment[],
   videoDuration: number,
-  videoWidth: number = 1920,
-  videoHeight: number = 1080,
-  fps: number = 30
+  originalVideoWidth: number = 1920,
+  originalVideoHeight: number = 1080,
+  originalFps: number = 30,
+  qualityOptions: RenderQualityOptions = {}
 ): ChillinProject {
-  // Validate parameters according to API documentation
-  if (videoWidth < 720 || videoWidth > 3840) {
-    console.warn(`Video width ${videoWidth} outside range 720-3840, using 1920`);
-    videoWidth = 1920;
-  }
-  if (videoHeight < 720 || videoHeight > 3840) {
-    console.warn(`Video height ${videoHeight} outside range 720-3840, using 1080`);
-    videoHeight = 1080;
-  }
-  if (fps < 15 || fps > 60) {
-    console.warn(`FPS ${fps} outside range 15-60, using 30`);
-    fps = 30;
-  }
+  // Calculate optimal render dimensions
+  const renderDimensions = calculateRenderDimensions(
+    originalVideoWidth,
+    originalVideoHeight,
+    qualityOptions
+  );
+  
+  const videoWidth = renderDimensions.width;
+  const videoHeight = renderDimensions.height;
+  const fps = renderDimensions.fps;
+  
+  console.log('Render quality settings:');
+  console.log(`- Quality preset: ${qualityOptions.quality || 'high'}`);
+  console.log(`- Original: ${originalVideoWidth}x${originalVideoHeight}@${originalFps}fps`);
+  console.log(`- Target: ${videoWidth}x${videoHeight}@${fps}fps`);
+  console.log(`- Upscaling: ${qualityOptions.upscale ? 'enabled' : 'disabled'}`);
   
   console.log('Building Chillin request:');
   console.log('- Video duration:', videoDuration);
@@ -247,16 +343,37 @@ export function buildChillinRequest(
   };
 }
 
-// Submit render job to Chillin API
+// Enhanced render job submission with quality validation
 export async function submitRenderJob(
   request: ChillinProject,
-  apiKey: string
+  apiKey: string,
+  qualityOptions?: RenderQualityOptions
 ): Promise<ChillinRenderResponse> {
+  console.log('Submitting render job with settings:');
+  console.log(`- Resolution: ${request.compositeWidth}x${request.compositeHeight}`);
+  console.log(`- FPS: ${request.fps}`);
+  console.log(`- Elements: ${request.projectData.view.length}`);
+  console.log(`- Quality: ${qualityOptions?.quality || 'high'}`);
+  
+  // Validate render settings for optimal quality
+  const totalDuration = request.projectData.duration;
+  const resolution = request.compositeWidth * request.compositeHeight;
+  const pixelRate = resolution * request.fps * totalDuration;
+  
+  if (pixelRate > 2.5e9) { // Very high complexity
+    console.warn('High complexity render detected - this may take longer to process');
+  }
+  
+  if (request.compositeWidth > 1920 || request.compositeHeight > 1920) {
+    console.log('High resolution render - ensuring optimal settings');
+  }
   const response = await fetch('https://render-api.chillin.online/render/v1', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'X-Render-Quality': qualityOptions?.quality || 'high',
+      'X-Render-Priority': 'quality' // Prioritize quality over speed
     },
     body: JSON.stringify(request)
   });
@@ -382,3 +499,113 @@ export async function getRenderStatus(
     throw error;
   }
 }
+
+// Enhanced render function with automatic quality optimization
+export async function renderVideoWithOptimalQuality(
+  videoUrl: string,
+  segmentsToRemove: EnhancedSegment[],
+  videoDuration: number,
+  originalVideoInfo: {
+    width: number;
+    height: number;
+    fps: number;
+  },
+  apiKey: string,
+  qualityPreference: 'speed' | 'balanced' | 'quality' = 'quality'
+): Promise<ChillinRenderResponse> {
+  
+  // Determine optimal quality settings based on preference
+  let qualityOptions: RenderQualityOptions;
+  
+  switch (qualityPreference) {
+    case 'speed':
+      qualityOptions = {
+        quality: 'medium',
+        maintainAspectRatio: true,
+        upscale: false
+      };
+      break;
+    case 'balanced':
+      qualityOptions = {
+        quality: 'high',
+        maintainAspectRatio: true,
+        upscale: false
+      };
+      break;
+    case 'quality':
+    default:
+      qualityOptions = {
+        quality: originalVideoInfo.width >= 1920 ? 'ultra' : 'high',
+        maintainAspectRatio: true,
+        upscale: originalVideoInfo.width < 1920 // Upscale lower res videos
+      };
+      break;
+  }
+  
+  console.log(`Rendering with ${qualityPreference} preference:`, qualityOptions);
+  
+  const request = buildChillinRequest(
+    videoUrl,
+    segmentsToRemove,
+    videoDuration,
+    originalVideoInfo.width,
+    originalVideoInfo.height,
+    originalVideoInfo.fps,
+    qualityOptions
+  );
+  
+  return await submitRenderJob(request, apiKey, qualityOptions);
+}
+
+// Quality assessment helper
+export function assessVideoQuality(width: number, height: number, bitrate: number): {
+  category: 'low' | 'medium' | 'high' | 'ultra';
+  recommendedRenderQuality: 'low' | 'medium' | 'high' | 'ultra' | 'lossless';
+  shouldUpscale: boolean;
+  estimatedRenderTime: string;
+} {
+  const totalPixels = width * height;
+  const pixelsPerBit = totalPixels / (bitrate || 1000000); // Default 1Mbps if unknown
+  
+  let category: 'low' | 'medium' | 'high' | 'ultra';
+  let recommendedRenderQuality: 'low' | 'medium' | 'high' | 'ultra' | 'lossless';
+  let shouldUpscale = false;
+  let estimatedRenderTime: string;
+  
+  if (totalPixels < 720 * 480) {
+    category = 'low';
+    recommendedRenderQuality = 'medium';
+    shouldUpscale = true;
+    estimatedRenderTime = '2-5 min';
+  } else if (totalPixels < 1280 * 720) {
+    category = 'medium';
+    recommendedRenderQuality = 'high';
+    shouldUpscale = false;
+    estimatedRenderTime = '3-7 min';
+  } else if (totalPixels < 1920 * 1080) {
+    category = 'high';
+    recommendedRenderQuality = 'high';
+    shouldUpscale = false;
+    estimatedRenderTime = '5-10 min';
+  } else {
+    category = 'ultra';
+    recommendedRenderQuality = 'ultra';
+    shouldUpscale = false;
+    estimatedRenderTime = '8-15 min';
+  }
+  
+  // Adjust based on bitrate quality
+  if (bitrate && bitrate > 10000000) { // > 10Mbps
+    recommendedRenderQuality = 'lossless';
+  }
+  
+  return {
+    category,
+    recommendedRenderQuality,
+    shouldUpscale,
+    estimatedRenderTime
+  };
+}
+
+// Export quality utilities
+export { QUALITY_PRESETS, calculateRenderDimensions, RenderQualityOptions };

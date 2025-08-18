@@ -66,17 +66,17 @@ export async function POST(request: NextRequest) {
     console.log('Chillin API response:', renderResponse);
     
     // Handle various response formats from Chillin API
-    const renderId = renderResponse.renderId || renderResponse.id || renderResponse.render_id || renderResponse.projectId;
+    const renderId = renderResponse.renderId;
     
     if (!renderId) {
       console.error('No render ID found in response:', renderResponse);
       // If no ID returned, it might be a synchronous render - check for URL
-      if (renderResponse.outputUrl || renderResponse.url) {
+      if (renderResponse.outputUrl) {
         return NextResponse.json({
           success: true,
           renderId: 'sync-render-' + Date.now(),
           status: 'completed',
-          outputUrl: renderResponse.outputUrl || renderResponse.url,
+          outputUrl: renderResponse.outputUrl,
           message: 'Render completed immediately'
         });
       }
@@ -155,7 +155,7 @@ export async function GET(request: NextRequest) {
       console.error('Status check error:', statusError);
       
       // If it's a timeout, return a processing status instead of error
-      if (statusError.message?.includes('timed out')) {
+      if (statusError instanceof Error && statusError.message?.includes('timed out')) {
         return NextResponse.json({
           success: true,
           renderId,

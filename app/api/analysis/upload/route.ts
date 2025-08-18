@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { getVideoProcessor, ProcessingOptions } from '@/lib/services/video-processor';
 
 // Helper function to wait for file to be active
 async function waitForFileActive(fileUri: string, maxAttempts = 60): Promise<boolean> {
@@ -42,6 +43,8 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
+    const processingOptions = formData.get('options') ? 
+      JSON.parse(formData.get('options') as string) : {};
     
     if (!file) {
       return NextResponse.json(
@@ -50,136 +53,197 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file type
-    if (!file.type.startsWith('video/')) {
+    console.log(`Processing upload: ${file.name}, size: ${file.size} bytes (${(file.size / 1024 / 1024).toFixed(1)} MB)`);
+
+    // Initialize video processor
+    const processor = getVideoProcessor();
+    await processor.initialize();
+
+    // Comprehensive validation using video processor
+    const validation = await processor.validateVideo(file, {
+      maxSizeBytes: 2 * 1024 * 1024 * 1024, // 2GB Gemini limit
+      ...processingOptions
+    });
+
+    if (!validation.valid) {
       return NextResponse.json(
-        { error: 'Invalid file type. Please upload a video file.' },
+        { 
+          error: 'Video validation failed', 
+          issues: validation.issues,
+          supportedFormats: processor.getSupportedFormats()
+        },
         { status: 400 }
       );
     }
 
-    // Validate file size (2GB max)
-    const maxSize = 2000 * 1024 * 1024; // 2GB in bytes
-    if (file.size > maxSize) {
+    // Process video (convert if needed, chunk if too large)
+    const processingResult = await processor.processVideo(file, {
+      maxSizeBytes: 2 * 1024 * 1024 * 1024, // 2GB for Gemini
+      chunkSize: 500, // 500MB chunks
+      quality: processingOptions.quality || 'medium',
+      ...processingOptions
+    });
+
+    if (!processingResult.success) {
       return NextResponse.json(
-        { error: 'File too large. Maximum size is 2GB.' },
-        { status: 400 }
-      );
-    }
-
-    console.log(`Uploading video: ${file.name}, size: ${file.size} bytes (${(file.size / 1024 / 1024).toFixed(1)} MB)`);
-    const uploadStartTime = Date.now();
-
-    // Prepare for parallel uploads
-    const geminiFormData = new FormData();
-    geminiFormData.append('file', file);
-
-    // Initialize Supabase client with service key for server-side operations
-    const supabaseAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_KEY!,
-      {
-        auth: {
-          persistSession: false
-        }
-      }
-    );
-
-    // Generate unique filename for Supabase
-    const timestamp = Date.now();
-    const fileExtension = file.name.split('.').pop() || 'mp4';
-    const supabaseFileName = `uploads/video_${timestamp}.${fileExtension}`;
-
-    // Convert File to ArrayBuffer for Supabase
-    const arrayBuffer = await file.arrayBuffer();
-
-    // Start both uploads in parallel
-    console.log('Starting parallel uploads to Gemini and Supabase...');
-    const [geminiResult, supabaseResult] = await Promise.all([
-      // Upload to Gemini
-      fetch(
-        `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${process.env.GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          body: geminiFormData,
-        }
-      ).then(async (response) => {
-        if (!response.ok) {
-          const error = await response.text();
-          console.error('Gemini upload error:', error);
-          throw new Error('Failed to upload video to Gemini');
-        }
-        return response.json();
-      }),
-      
-      // Upload to Supabase
-      supabaseAdmin.storage
-        .from('videos')
-        .upload(supabaseFileName, arrayBuffer, {
-          contentType: file.type,
-          upsert: false
-        })
-    ]);
-
-    const uploadTime = Date.now() - uploadStartTime;
-    console.log(`Parallel upload successful (took ${uploadTime}ms / ${(uploadTime/1000).toFixed(1)}s)`);
-    console.log(`- Gemini: ${geminiResult.file.name}`);
-    console.log(`- Supabase: ${supabaseFileName}`);
-
-    // Check if Supabase upload was successful
-    if (supabaseResult.error) {
-      console.error('Supabase upload error:', supabaseResult.error);
-      // Continue anyway - Gemini upload succeeded, we can upload to Supabase later if needed
-      console.warn('Supabase upload failed, but continuing with Gemini analysis');
-    }
-
-    // Get public URL for Supabase video
-    let supabaseUrl = null;
-    if (!supabaseResult.error) {
-      const { data: publicUrlData } = supabaseAdmin.storage
-        .from('videos')
-        .getPublicUrl(supabaseFileName);
-      supabaseUrl = publicUrlData.publicUrl;
-      console.log('Supabase public URL:', supabaseUrl);
-    }
-
-    const result = geminiResult;
-    
-    // Wait for file to become active
-    console.log('Waiting for file to become active...');
-    try {
-      const isActive = await waitForFileActive(result.file.uri);
-      
-      if (!isActive) {
-        return NextResponse.json(
-          { error: 'File upload succeeded but activation timed out. Please try again with a smaller video or different format.' },
-          { status: 500 }
-        );
-      }
-    } catch (waitError) {
-      console.error('Error during file activation:', waitError);
-      return NextResponse.json(
-        { error: waitError instanceof Error ? waitError.message : 'File processing failed' },
+        { 
+          error: 'Video processing failed', 
+          details: processingResult.error,
+          originalFormat: processingResult.originalFormat
+        },
         { status: 500 }
       );
     }
-    
-    console.log('File is active and ready for analysis');
+
+    // Determine which file(s) to upload to Gemini
+    const filesToProcess = processingResult.chunks || 
+      [{ index: 0, file: processingResult.convertedFile || file, startTime: 0, endTime: 0, duration: 0, size: (processingResult.convertedFile || file).size }];
+
+    const uploadStartTime = Date.now();
+    const uploadResults: any[] = [];
+
+    // Process each file/chunk
+    for (let i = 0; i < filesToProcess.length; i++) {
+      const chunk = filesToProcess[i];
+      console.log(`Processing chunk ${i + 1}/${filesToProcess.length}: ${chunk.file.name}, size: ${(chunk.size / 1024 / 1024).toFixed(1)} MB`);
+
+      // Prepare Gemini upload for this chunk
+      const geminiFormData = new FormData();
+      geminiFormData.append('file', chunk.file);
+
+      // Initialize Supabase client with service key for server-side operations
+      const supabaseAdmin = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_KEY!,
+        {
+          auth: {
+            persistSession: false
+          }
+        }
+      );
+
+      // Generate unique filename for Supabase
+      const timestamp = Date.now();
+      const fileExtension = chunk.file.name.split('.').pop() || 'mp4';
+      const supabaseFileName = `uploads/video_${timestamp}_chunk_${chunk.index}.${fileExtension}`;
+
+      // Convert File to ArrayBuffer for Supabase
+      const arrayBuffer = await chunk.file.arrayBuffer();
+
+      // Start both uploads in parallel
+      console.log(`Starting parallel uploads for chunk ${i + 1} to Gemini and Supabase...`);
+      const [geminiResult, supabaseResult] = await Promise.all([
+        // Upload to Gemini
+        fetch(
+          `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${process.env.GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            body: geminiFormData,
+          }
+        ).then(async (response) => {
+          if (!response.ok) {
+            const error = await response.text();
+            console.error('Gemini upload error:', error);
+            throw new Error(`Failed to upload chunk ${i + 1} to Gemini`);
+          }
+          return response.json();
+        }),
+        
+        // Upload to Supabase
+        supabaseAdmin.storage
+          .from('videos')
+          .upload(supabaseFileName, arrayBuffer, {
+            contentType: chunk.file.type,
+            upsert: false
+          })
+      ]);
+
+      console.log(`Chunk ${i + 1} parallel upload successful`);
+      console.log(`- Gemini: ${geminiResult.file.name}`);
+      console.log(`- Supabase: ${supabaseFileName}`);
+
+      // Check if Supabase upload was successful
+      if (supabaseResult.error) {
+        console.error(`Supabase upload error for chunk ${i + 1}:`, supabaseResult.error);
+        // Continue anyway - Gemini upload succeeded
+      }
+
+      // Get public URL for Supabase video
+      let supabaseUrl = null;
+      if (!supabaseResult.error) {
+        const { data: publicUrlData } = supabaseAdmin.storage
+          .from('videos')
+          .getPublicUrl(supabaseFileName);
+        supabaseUrl = publicUrlData.publicUrl;
+      }
+
+      // Wait for file to become active in Gemini
+      console.log(`Waiting for chunk ${i + 1} to become active in Gemini...`);
+      try {
+        const isActive = await waitForFileActive(geminiResult.file.uri);
+        
+        if (!isActive) {
+          throw new Error(`Chunk ${i + 1} upload succeeded but activation timed out`);
+        }
+      } catch (waitError) {
+        console.error(`Error during chunk ${i + 1} activation:`, waitError);
+        throw waitError;
+      }
+      
+      console.log(`Chunk ${i + 1} is active and ready for analysis`);
+
+      // Store chunk result
+      uploadResults.push({
+        chunkIndex: chunk.index,
+        fileUri: geminiResult.file.uri,
+        fileName: geminiResult.file.displayName,
+        sizeBytes: geminiResult.file.sizeBytes,
+        mimeType: geminiResult.file.mimeType,
+        supabaseUrl,
+        supabaseFileName,
+        startTime: chunk.startTime,
+        endTime: chunk.endTime,
+        duration: chunk.duration
+      });
+    }
+
+    const totalUploadTime = Date.now() - uploadStartTime;
+    console.log(`All ${filesToProcess.length} chunk(s) processed successfully in ${(totalUploadTime/1000).toFixed(1)}s`);
+
+    // Cleanup processor resources
+    await processor.cleanup();
     
     return NextResponse.json({
       success: true,
-      fileUri: result.file.uri,
-      fileName: result.file.displayName,
-      sizeBytes: result.file.sizeBytes,
-      mimeType: result.file.mimeType,
-      supabaseUrl: supabaseUrl,  // Include the Supabase URL for later use
-      supabaseFileName: supabaseFileName
+      processingResult: {
+        originalFormat: processingResult.originalFormat,
+        targetFormat: processingResult.targetFormat,
+        conversionRequired: processingResult.originalFormat !== processingResult.targetFormat,
+        wasChunked: filesToProcess.length > 1,
+        totalSize: processingResult.totalSize,
+        geminiCompatible: processingResult.geminiCompatible
+      },
+      chunks: uploadResults,
+      totalChunks: filesToProcess.length,
+      uploadTime: totalUploadTime
     });
 
   } catch (error) {
     console.error('Upload error:', error);
+    
+    // Cleanup processor resources on error
+    try {
+      const processor = getVideoProcessor();
+      await processor.cleanup();
+    } catch (cleanupError) {
+      console.warn('Cleanup error:', cleanupError);
+    }
+    
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { 
+        error: 'Internal server error',
+        details: error instanceof Error ? error.message : String(error)
+      },
       { status: 500 }
     );
   }

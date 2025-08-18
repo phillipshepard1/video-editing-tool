@@ -7,6 +7,8 @@ import { VideoUploader } from '@/components/video-uploader';
 import { WorkflowManagerV2 } from '@/components/WorkflowManagerV2';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { QualityBadge, type QualityLevel } from '@/components/ui/quality-badge';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { 
   Video, Upload, Clock, TrendingUp, Film, Sparkles, 
   Play, FileText, Zap, ChevronRight, BarChart3,
@@ -39,6 +41,9 @@ interface RecentProject {
   editedAt: string;
   segmentsRemoved: number;
   timeSaved: string;
+  renderQuality?: QualityLevel;
+  fileSize?: string;
+  resolution?: string;
 }
 
 export default function DashboardPage() {
@@ -72,7 +77,10 @@ export default function DashboardPage() {
       duration: '5:23',
       editedAt: '2 hours ago',
       segmentsRemoved: 12,
-      timeSaved: '1:45'
+      timeSaved: '1:45',
+      renderQuality: 'hd',
+      fileSize: '45.2 MB',
+      resolution: '1080p'
     },
     {
       id: '2',
@@ -80,7 +88,10 @@ export default function DashboardPage() {
       duration: '10:15',
       editedAt: 'Yesterday',
       segmentsRemoved: 28,
-      timeSaved: '3:20'
+      timeSaved: '3:20',
+      renderQuality: 'standard',
+      fileSize: '78.5 MB',
+      resolution: '720p'
     },
     {
       id: '3',
@@ -88,7 +99,10 @@ export default function DashboardPage() {
       duration: '15:42',
       editedAt: '3 days ago',
       segmentsRemoved: 45,
-      timeSaved: '5:10'
+      timeSaved: '5:10',
+      renderQuality: 'premium',
+      fileSize: '156.8 MB',
+      resolution: '4K'
     }
   ]);
 
@@ -384,7 +398,8 @@ export default function DashboardPage() {
   }
 
   return (
-    <AuthenticatedLayout>
+    <TooltipProvider>
+      <AuthenticatedLayout>
       <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Welcome Section */}
@@ -591,13 +606,24 @@ export default function DashboardPage() {
                     <div className="aspect-video bg-gray-100 rounded-lg mb-3 flex items-center justify-center">
                       <Video className="w-8 h-8 text-gray-400" />
                     </div>
-                    <h3 className="text-gray-900 font-medium mb-1 group-hover:text-purple-600 transition-colors">
-                      {project.name}
-                    </h3>
-                    <div className="flex items-center justify-between text-sm text-gray-600">
+                    <div className="flex items-start justify-between mb-1">
+                      <h3 className="text-gray-900 font-medium group-hover:text-purple-600 transition-colors flex-1">
+                        {project.name}
+                      </h3>
+                      {project.renderQuality && (
+                        <QualityBadge quality={project.renderQuality} showTooltip={true} />
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
                       <span>{project.duration}</span>
                       <span>{project.editedAt}</span>
                     </div>
+                    {project.resolution && project.fileSize && (
+                      <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
+                        <span>{project.resolution}</span>
+                        <span>{project.fileSize}</span>
+                      </div>
+                    )}
                     <div className="mt-2 pt-2 border-t border-gray-200 flex items-center justify-between text-xs">
                       <span className="text-green-600">{project.segmentsRemoved} cuts</span>
                       <span className="text-purple-600">Saved {project.timeSaved}</span>
@@ -615,5 +641,6 @@ export default function DashboardPage() {
         </div>
       </main>
     </AuthenticatedLayout>
+    </TooltipProvider>
   );
 }

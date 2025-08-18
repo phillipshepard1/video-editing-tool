@@ -124,7 +124,7 @@ export function FinalReviewPanel({
         console.error('Render submission failed:', {
           renderData,
           errorMessage,
-          videoUrl: uploadResult?.publicUrl,
+          videoUrl: publicUrl,
           segmentsCount: finalSegmentsToRemove.length
         });
         throw new Error(errorMessage);
@@ -142,7 +142,7 @@ export function FinalReviewPanel({
       const pollStatus = async () => {
         if (attempts >= maxAttempts) {
           console.error('Render timeout after', attempts, 'attempts');
-          setRenderStatus('timeout');
+          setRenderStatus('error');
           setRenderProgress(0);
           alert(`Render is taking longer than expected (${Math.floor((attempts * pollInterval) / 1000 / 60)} minutes). The video may still be processing on Chillin's servers. Render ID: ${renderData.renderId}`);
           return;
