@@ -233,7 +233,15 @@ export function ClusterPanel({
             })}
             
             <div className="pt-3 mt-3 border-t">
-              <Button className="w-full bg-purple-600 hover:bg-purple-700 text-white cursor-pointer">
+              <Button 
+                className="w-full bg-purple-600 hover:bg-purple-700 text-white cursor-pointer"
+                onClick={() => {
+                  // Accept all cluster selections at once
+                  clusters.forEach(cluster => {
+                    handleSelectWinner(cluster.id, cluster.winner ? 'gap' : 0);
+                  });
+                }}
+              >
                 Accept All Selections
               </Button>
             </div>
@@ -318,7 +326,23 @@ export function ClusterPanel({
                   variant="outline"
                   className="cursor-pointer bg-white hover:bg-gray-50 text-gray-900 border-gray-300"
                   onClick={() => {
-                    // Logic to select different winner
+                    // Cycle through attempts and winner
+                    const currentSelection = clusterSelections.find(s => s.clusterId === selectedCluster.id);
+                    const totalOptions = selectedCluster.attempts.length + (selectedCluster.winner ? 1 : 0);
+                    let nextSelection = 0;
+                    
+                    if (currentSelection) {
+                      if (currentSelection.selectedWinner === 'gap') {
+                        nextSelection = 0; // Go to first attempt
+                      } else {
+                        nextSelection = ((currentSelection.selectedWinner as number) + 1) % totalOptions;
+                        if (nextSelection === selectedCluster.attempts.length && selectedCluster.winner) {
+                          nextSelection = 'gap'; // Select winner
+                        }
+                      }
+                    }
+                    
+                    handleSelectWinner(selectedCluster.id, nextSelection as number | 'gap');
                   }}
                 >
                   Select Different Winner
@@ -455,7 +479,19 @@ export function ClusterPanel({
                 )}
                 
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline" className="flex-1">
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="flex-1 cursor-pointer"
+                    onClick={() => {
+                      // Navigate to previous cluster
+                      const currentIndex = clusters.findIndex(c => c.id === selectedCluster?.id);
+                      if (currentIndex > 0) {
+                        setSelectedCluster(clusters[currentIndex - 1]);
+                      }
+                    }}
+                    disabled={!selectedCluster || clusters.findIndex(c => c.id === selectedCluster.id) === 0}
+                  >
                     <SkipBack className="w-4 h-4 mr-1" />
                     Previous
                   </Button>
@@ -470,7 +506,19 @@ export function ClusterPanel({
                       <><Play className="w-4 h-4 mr-1" />Play</>
                     )}
                   </Button>
-                  <Button size="sm" variant="outline" className="flex-1">
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="flex-1 cursor-pointer"
+                    onClick={() => {
+                      // Navigate to next cluster
+                      const currentIndex = clusters.findIndex(c => c.id === selectedCluster?.id);
+                      if (currentIndex < clusters.length - 1) {
+                        setSelectedCluster(clusters[currentIndex + 1]);
+                      }
+                    }}
+                    disabled={!selectedCluster || clusters.findIndex(c => c.id === selectedCluster.id) === clusters.length - 1}
+                  >
                     Next
                     <SkipForward className="w-4 h-4 ml-1" />
                   </Button>

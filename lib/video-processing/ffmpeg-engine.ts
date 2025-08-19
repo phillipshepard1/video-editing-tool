@@ -420,7 +420,11 @@ export class FFmpegEngine {
       ]);
       
       const infoData = await this.ffmpeg.readFile('info.json');
-      const info = JSON.parse(new TextDecoder().decode(infoData));
+      const info = JSON.parse(
+        typeof infoData === 'string' 
+          ? infoData 
+          : new TextDecoder().decode(infoData as Uint8Array)
+      );
       
       // Clean up
       await this.ffmpeg.deleteFile(inputName);

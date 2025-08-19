@@ -490,6 +490,7 @@ function TakeComparisonCard({
                 ? 'bg-green-600 hover:bg-green-700' 
                 : 'bg-purple-600 hover:bg-purple-700'
             }`}
+
           >
             {isSelected ? 'Selected' : 'Select This'}
           </Button>

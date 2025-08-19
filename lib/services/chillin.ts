@@ -102,10 +102,10 @@ export interface ChillinRenderRequest {
 }
 
 export interface ChillinRenderResponse {
-  renderId: string;
+  renderId: string | null;
   status: 'queued' | 'processing' | 'completed' | 'failed';
-  outputUrl?: string;
-  error?: string;
+  outputUrl?: string | null;
+  error?: string | null;
 }
 
 export interface ChillinVideoElement {
@@ -136,6 +136,7 @@ export interface ChillinVideoElement {
   externalUrl: string;
   ext: string;  // "mp4" or "mov"
   startInSource: number;  // Start time in source video (seconds) - THIS IS THE KEY FIELD
+  isFrontTrimmed?: boolean;  // Required when startInSource > 0
   volume?: number;  // 0-1
   hasAudio: boolean;
 }
@@ -288,6 +289,12 @@ export function buildChillinRequest(
     const segmentDuration = segment.end - segment.start;
     // Generate a UUID-like ID (recommended by API docs)
     const id = `${Math.random().toString(36).substr(2, 9)}-${Date.now()}-${index}`;
+    
+    // Validate segment values
+    if (segmentDuration <= 0) {
+      console.error(`Invalid segment duration: ${segmentDuration} for segment ${index}`);
+    }
+    
     const element: ChillinVideoElement = {
       id,
       type: 'Video',
@@ -311,11 +318,18 @@ export function buildChillinRequest(
       externalUrl: videoUrl,
       ext: videoUrl.toLowerCase().endsWith('.mov') ? 'mov' : 'mp4',  // Detect extension from URL
       startInSource: segment.start,  // CORRECT FIELD: Where to start in source video (seconds)
+      isFrontTrimmed: segment.start > 0,  // Set to true when startInSource > 0
       volume: 1,  // Full volume
       hasAudio: true  // Assume video has audio
     };
     
-    console.log(`  Element ${index}: output ${outputPosition.toFixed(2)}s for ${segmentDuration.toFixed(2)}s, source startInSource=${segment.start.toFixed(2)}s`);
+    console.log(`  Element ${index}:`, {
+      outputStart: outputPosition.toFixed(2),
+      duration: segmentDuration.toFixed(2),
+      sourceStart: segment.start.toFixed(2),
+      sourceEnd: segment.end.toFixed(2),
+      isFrontTrimmed: element.isFrontTrimmed
+    });
     
     outputPosition += segmentDuration;  // Update position for next segment
     return element;
@@ -391,10 +405,10 @@ export async function submitRenderJob(
     const renderId = result.data.render_id || result.data.renderId;
     console.log(`Found render ID: ${renderId}`);
     return {
-      renderId: renderId,
-      status: result.data.status || 'processing',
-      outputUrl: result.data.outputUrl,
-      error: null
+      renderId: renderId || null,
+      status: (result.data.status as 'queued' | 'processing' | 'completed' | 'failed') || 'processing',
+      outputUrl: result.data.outputUrl || undefined,
+      error: undefined
     };
   }
   
@@ -406,8 +420,8 @@ export async function submitRenderJob(
   
   return {
     renderId: null,
-    status: 'failed',
-    outputUrl: null,
+    status: 'failed' as const,
+    outputUrl: undefined,
     error: result.msg || 'Unknown error'
   };
 }
@@ -446,11 +460,20 @@ export async function getRenderStatus(
     }
 
     const result = await response.json();
-    console.log('Chillin status response:', result);
+    console.log('Chillin status response:', JSON.stringify(result, null, 2));
     
     // Parse response according to API docs format
     if (result.code === 0 && result.data?.render) {
       const render = result.data.render;
+      
+      // Log render details for debugging
+      console.log('Render details:', {
+        renderId: render.render_id,
+        state: render.state,
+        progress: render.progress,
+        error: render.error_message || render.error,
+        videoUrl: render.video_url
+      });
       
       // Map Chillin states to our expected format
       let status = 'processing';
@@ -464,11 +487,16 @@ export async function getRenderStatus(
         status = 'processing';
       }
       
+      // Get more detailed error message if available
+      const errorMessage = render.state === 'failed' 
+        ? (render.error_message || render.error || render.failure_reason || 'Render failed')
+        : undefined;
+      
       return {
         renderId: render.render_id?.toString() || renderId,
-        status: status,
-        outputUrl: render.video_url || null,
-        error: render.state === 'failed' ? 'Render failed' : null
+        status: status as 'queued' | 'processing' | 'completed' | 'failed',
+        outputUrl: render.video_url || undefined,
+        error: errorMessage
       };
     }
     
@@ -477,8 +505,8 @@ export async function getRenderStatus(
       console.error('Chillin API error:', result.msg);
       return {
         renderId: renderId,
-        status: 'failed',
-        outputUrl: null,
+        status: 'failed' as const,
+        outputUrl: undefined,
         error: result.msg || 'Unknown error'
       };
     }
@@ -486,13 +514,13 @@ export async function getRenderStatus(
     // Fallback for unexpected format
     return {
       renderId: renderId,
-      status: 'processing',
-      outputUrl: null,
-      error: null
+      status: 'processing' as const,
+      outputUrl: undefined,
+      error: undefined
     };
   } catch (error) {
     clearTimeout(timeout);
-    if (error.name === 'AbortError') {
+    if (error instanceof Error && error.name === 'AbortError') {
       console.error('Render status check timed out after 10 seconds');
       throw new Error('Status check timed out - Chillin API may be slow or unresponsive');
     }
@@ -608,4 +636,5 @@ export function assessVideoQuality(width: number, height: number, bitrate: numbe
 }
 
 // Export quality utilities
-export { QUALITY_PRESETS, calculateRenderDimensions, RenderQualityOptions };
+export { QUALITY_PRESETS, calculateRenderDimensions };
+export type { RenderQualityOptions };

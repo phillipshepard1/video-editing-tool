@@ -3,12 +3,26 @@ import { analyzeVideoWithTakes } from '@/lib/services/gemini';
 
 export async function POST(request: NextRequest) {
   try {
-    const { fileUri, prompt, targetDuration } = await request.json();
+    const { fileUri, supabaseUrl, prompt, targetDuration } = await request.json();
 
-    if (!fileUri) {
+    // Accept either Gemini fileUri or Supabase URL as fallback
+    if (!fileUri && !supabaseUrl) {
       return NextResponse.json(
-        { error: 'No file URI provided' },
+        { error: 'No file URI or URL provided' },
         { status: 400 }
+      );
+    }
+    
+    // If only Supabase URL available, skip enhanced analysis
+    if (!fileUri && supabaseUrl) {
+      console.log('No Gemini URI available, skipping enhanced analysis');
+      return NextResponse.json(
+        { 
+          error: 'Enhanced analysis requires Gemini file upload',
+          fallbackAvailable: true,
+          message: 'File too large for enhanced analysis. Using standard analysis instead.'
+        },
+        { status: 422 }
       );
     }
 

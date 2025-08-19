@@ -300,7 +300,11 @@ export class VideoProcessor {
       ]);
 
       const infoData = await this.ffmpeg.readFile('info.json');
-      const info = JSON.parse(new TextDecoder().decode(infoData));
+      const info = JSON.parse(
+        typeof infoData === 'string' 
+          ? infoData 
+          : new TextDecoder().decode(infoData as Uint8Array)
+      );
 
       const videoStream = info.streams.find((stream: any) => stream.codec_type === 'video');
       
@@ -393,7 +397,10 @@ export class VideoProcessor {
 
       // Read converted file
       const convertedData = await this.ffmpeg.readFile(outputFileName);
-      const convertedBlob = new Blob([convertedData], { type: `video/${targetFormat}` });
+      const convertedBlob = new Blob(
+        [typeof convertedData === 'string' ? new TextEncoder().encode(convertedData) : convertedData],
+        { type: `video/${targetFormat}` }
+      );
       const convertedFile = new File(
         [convertedBlob], 
         file.name.replace(/\.[^.]+$/, `.${targetFormat}`), 
@@ -490,7 +497,10 @@ export class VideoProcessor {
 
       // Read chunk data
       const chunkData = await this.ffmpeg.readFile(outputFileName);
-      const chunkBlob = new Blob([chunkData], { type: 'video/mp4' });
+      const chunkBlob = new Blob(
+        [typeof chunkData === 'string' ? new TextEncoder().encode(chunkData) : chunkData],
+        { type: 'video/mp4' }
+      );
       const chunkFile = new File(
         [chunkBlob],
         `${file.name.replace(/\.[^.]+$/, '')}_chunk_${i + 1}.mp4`,
@@ -702,4 +712,4 @@ export function getVideoProcessor(): VideoProcessor {
   return processorInstance;
 }
 
-export { ProcessingOptions, ConversionProgress, VideoChunk, ProcessingResult };
+export type { ProcessingOptions, ConversionProgress, VideoChunk, ProcessingResult };

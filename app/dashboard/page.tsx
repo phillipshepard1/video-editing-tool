@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../src/contexts/AuthContext';
 import AuthenticatedLayout from '@/components/AuthenticatedLayout';
 import { VideoUploader } from '@/components/video-uploader';
+import { QueueVideoUploader } from '@/components/queue-video-uploader';
+import { JobList } from '@/components/job-list';
 import { WorkflowManagerV2 } from '@/components/WorkflowManagerV2';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -12,7 +14,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { 
   Video, Upload, Clock, TrendingUp, Film, Sparkles, 
   Play, FileText, Zap, ChevronRight, BarChart3,
-  FolderOpen, Plus, Grid, List, Search, Filter
+  FolderOpen, Plus, Grid, List, Search, Filter, Briefcase
 } from 'lucide-react';
 import { formatTime, formatFileSize } from '@/lib/utils';
 import { EnhancedSegment, FilterState, createDefaultFilterState, SegmentCategory } from '@/lib/types/segments';
@@ -48,7 +50,7 @@ interface RecentProject {
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [view, setView] = useState<'dashboard' | 'analysis'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'analysis' | 'review'>('dashboard');
   
   // Core state for video analysis
   const [file, setFile] = useState<File | null>(null);
@@ -63,6 +65,8 @@ export default function DashboardPage() {
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
   const [selectedSegment, setSelectedSegment] = useState<EnhancedSegment | null>(null);
+  const [currentJob, setCurrentJob] = useState<any>(null); // Track selected job for review
+  const [refreshJobList, setRefreshJobList] = useState(0); // Trigger job list refresh
   const videoRef = useRef<HTMLVideoElement>(null!);
   
   // Filter state
@@ -229,6 +233,7 @@ export default function DashboardPage() {
             },
             body: JSON.stringify({
               fileUri: uploadResult.fileUri,
+              supabaseUrl: uploadResult.supabaseUrl, // Include Supabase URL as fallback
               prompt: 'Analyze for multiple takes, quality scoring, and take recommendations',
             }),
           });
@@ -255,6 +260,7 @@ export default function DashboardPage() {
           },
           body: JSON.stringify({
             fileUri: uploadResult.fileUri,
+            supabaseUrl: uploadResult.supabaseUrl, // Include Supabase URL as fallback
             prompt: 'Analyze for pauses, filler words, and content that can be removed',
             fileSize: Math.round(videoToUpload.size / (1024 * 1024)),
           }),
@@ -362,6 +368,70 @@ export default function DashboardPage() {
     setVisibleSegments(filtered);
   }, [filterState, analysis]);
 
+  // Review View - for reviewing completed jobs before rendering
+  if (view === 'review' && currentJob) {
+    return (
+      <AuthenticatedLayout>
+        <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+          <div className="container mx-auto py-8 px-4 max-w-[1600px]">
+            {/* Header */}
+            <div className="mb-6 flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setView('dashboard');
+                    setCurrentJob(null);
+                  }}
+                >
+                  ← Back to Dashboard
+                </Button>
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">Review & Edit</h1>
+                  <p className="text-sm text-gray-600">{currentJob.metadata?.originalFileName || currentJob.title}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Use WorkflowManagerV2 if we have analysis data */}
+            {(() => {
+              const geminiData = currentJob.result_data?.gemini_processing as any;
+              const analysisData = geminiData?.analysis;
+              
+              if (!analysisData) {
+                return (
+                  <div className="bg-white rounded-xl p-8 text-center">
+                    <p className="text-gray-500">Loading analysis data...</p>
+                  </div>
+                );
+              }
+              
+              return (
+                <WorkflowManagerV2
+                  segments={analysisData.segmentsToRemove || []}
+                  videoUrl={currentJob.metadata?.videoUrl || analysisData.videoUrl || ''}
+                  videoDuration={analysisData.summary?.originalDuration || videoDuration || 0}
+                  originalDuration={analysisData.summary?.originalDuration || 0}
+                videoRef={videoRef}
+                onSegmentSelect={setSelectedSegment}
+                  onExport={(format, segments) => {
+                    // Handle export
+                    console.log('Export requested:', format, segments);
+                  }}
+                  onNewAnalysis={() => {
+                    setView('dashboard');
+                    setCurrentJob(null);
+                  }}
+                  supabaseUrl={analysisData.supabaseUrl}
+                />
+              );
+            })()}
+          </div>
+        </main>
+      </AuthenticatedLayout>
+    );
+  }
+
   if (view === 'analysis' && analysis) {
     return (
       <AuthenticatedLayout>
@@ -447,131 +517,61 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Quick Actions */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-            {/* Upload Section */}
-            <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-8 border border-gray-200 shadow-lg">
-              <div className="flex items-center mb-6">
-                <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center mr-4">
-                  <Zap className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Start New Project</h2>
-                  <p className="text-gray-600">Upload your talking head video for AI analysis</p>
-                </div>
-              </div>
-
-              {!file && !isUploading && !isAnalyzing && (
-                <VideoUploader 
-                  onFileSelect={handleFileSelect}
-                  isUploading={false}
-                />
-              )}
-
-              {file && !isUploading && !isAnalyzing && (
-                <div className="space-y-4">
-                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <Video className="w-5 h-5 text-purple-500 mr-3" />
-                        <div>
-                          <p className="text-gray-900 font-medium">{file.name}</p>
-                          <p className="text-gray-600 text-sm">{formatFileSize(file.size)}</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setFile(null)}
-                        className="text-gray-400 hover:text-gray-700"
-                      >
-                        ✕
-                      </button>
-                    </div>
+          {/* Main Content Area */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+            {/* Upload Section - Left Column */}
+            <div className="lg:col-span-1">
+              <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 border border-gray-200 shadow-lg">
+                <div className="flex items-center mb-4">
+                  <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center mr-3">
+                    <Upload className="w-5 h-5 text-white" />
                   </div>
-                  <Button 
-                    onClick={handleUploadAndAnalyze}
-                    className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
-                    size="lg"
-                  >
-                    <Sparkles className="mr-2" />
-                    Analyze with AI
-                  </Button>
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900">Upload Videos</h2>
+                    <p className="text-sm text-gray-600">Process multiple videos in background</p>
+                  </div>
                 </div>
-              )}
 
-              {(isUploading || isAnalyzing) && (
-                <div className="space-y-4">
-                  {isUploading && (
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-gray-900">Uploading to Gemini...</span>
-                        <span className="text-sm text-gray-600">{uploadProgress}%</span>
-                      </div>
-                      <Progress value={uploadProgress} className="h-2" />
-                    </div>
-                  )}
-                  
-                  {isAnalyzing && (
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-gray-900">Analyzing with AI...</span>
-                        <span className="text-sm text-gray-600">{analysisProgress}%</span>
-                      </div>
-                      <Progress value={analysisProgress} className="h-2" />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {error && (
-                <div className="mt-4 p-4 bg-red-500/10 border border-red-500/50 rounded-lg">
-                  <p className="text-sm text-red-400">{error}</p>
-                </div>
-              )}
+                <QueueVideoUploader 
+                  onJobCreated={(jobId) => {
+                    console.log('Job created:', jobId);
+                    setRefreshJobList(prev => prev + 1); // Trigger job list refresh
+                  }}
+                />
+              </div>
             </div>
 
-            {/* Features Section */}
-            <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-8 border border-gray-200 shadow-lg">
-              <h3 className="text-xl font-bold text-gray-900 mb-6">How It Works</h3>
-              <div className="space-y-4">
-                <div className="flex items-start">
-                  <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center mr-4 mt-1">
-                    <Upload className="w-4 h-4 text-purple-600" />
-                  </div>
-                  <div>
-                    <h4 className="text-gray-900 font-medium mb-1">Upload Your Video</h4>
-                    <p className="text-gray-600 text-sm">Upload your talking head video in any format</p>
-                  </div>
-                </div>
-                
-                <div className="flex items-start">
-                  <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-4 mt-1">
-                    <Sparkles className="w-4 h-4 text-green-600" />
-                  </div>
-                  <div>
-                    <h4 className="text-gray-900 font-medium mb-1">AI Analysis</h4>
-                    <p className="text-gray-600 text-sm">AI detects pauses, filler words, and mistakes</p>
+            {/* Job List - Right Column */}
+            <div className="lg:col-span-2">
+              <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 border border-gray-200 shadow-lg">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center">
+                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center mr-3">
+                      <Briefcase className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-gray-900">Processing Queue</h2>
+                      <p className="text-sm text-gray-600">Your videos are processing in the background</p>
+                    </div>
                   </div>
                 </div>
-                
-                <div className="flex items-start">
-                  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-4 mt-1">
-                    <Play className="w-4 h-4 text-blue-600" />
-                  </div>
-                  <div>
-                    <h4 className="text-gray-900 font-medium mb-1">Review & Edit</h4>
-                    <p className="text-gray-600 text-sm">Preview and select segments to remove</p>
-                  </div>
-                </div>
-                
-                <div className="flex items-start">
-                  <div className="w-8 h-8 bg-pink-100 rounded-lg flex items-center justify-center mr-4 mt-1">
-                    <FileText className="w-4 h-4 text-pink-600" />
-                  </div>
-                  <div>
-                    <h4 className="text-gray-900 font-medium mb-1">Export EDL</h4>
-                    <p className="text-gray-600 text-sm">Get EDL file for your editing software</p>
-                  </div>
-                </div>
+
+                <JobList 
+                  key={refreshJobList}
+                  onJobSelect={(job) => {
+                    console.log('Job selected for review:', job);
+                    setCurrentJob(job);
+                    setView('review');
+                    // Load the job's analysis data if available
+                    const geminiData = job.result_data?.gemini_processing as any;
+                    if (geminiData?.analysis) {
+                      setAnalysis(geminiData.analysis);
+                    }
+                  }}
+                  onJobDelete={(jobId) => {
+                    console.log('Job deleted:', jobId);
+                  }}
+                />
               </div>
             </div>
           </div>

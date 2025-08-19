@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Download, FileText, Film, FileCode, Video, Loader2, CheckCircle, AlertCircle, Upload } from 'lucide-react';
 import { useState } from 'react';
 import { getVideoFileForUpload, uploadVideoToSupabase } from '@/lib/video-upload';
+import { EditedVideoPreview } from './EditedVideoPreview';
 
 interface FinalReviewPanelProps {
   finalSegmentsToRemove: EnhancedSegment[];
@@ -51,10 +52,19 @@ export function FinalReviewPanel({
     return `${mins.toString().padStart(2, '0')}:${secs}`;
   };
 
-  const parseTimeToSeconds = (timeStr: string): number => {
+  const parseTimeToSeconds = (timeStr: string | number): number => {
+    // If already a number, return it
+    if (typeof timeStr === 'number') {
+      return timeStr;
+    }
+    
+    // Parse time string
     const parts = timeStr.split(':');
     if (parts.length === 2) {
       return parseInt(parts[0]) * 60 + parseFloat(parts[1]);
+    } else if (parts.length === 3) {
+      // Handle HH:MM:SS format
+      return parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseFloat(parts[2]);
     }
     return parseFloat(timeStr);
   };
@@ -363,20 +373,14 @@ export function FinalReviewPanel({
             <CardTitle className="text-lg">Final Cut Preview</CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Video Preview */}
+            {/* Edited Video Preview with automatic segment skipping */}
             <div className="aspect-video bg-black rounded-lg overflow-hidden mb-4">
-              {videoUrl ? (
-                <video
-                  ref={videoRef}
-                  src={videoUrl}
-                  className="w-full h-full"
-                  controls
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-gray-400">
-                  No video loaded
-                </div>
-              )}
+              <EditedVideoPreview
+                videoUrl={videoUrl}
+                segmentsToRemove={finalSegmentsToRemove}
+                originalDuration={originalDuration}
+                finalDuration={finalDuration}
+              />
             </div>
 
             {/* Timeline Visualization */}
@@ -388,7 +392,8 @@ export function FinalReviewPanel({
                   <div className="w-full h-8 bg-gray-300 rounded relative">
                     {/* Removed segments */}
                     {finalSegmentsToRemove.map((segment, index) => {
-                      const startPercent = (parseTimeToSeconds(segment.startTime) / originalDuration) * 100;
+                      const startTime = typeof segment.startTime === 'number' ? segment.startTime : parseTimeToSeconds(segment.startTime);
+                      const startPercent = (startTime / originalDuration) * 100;
                       const widthPercent = (segment.duration / originalDuration) * 100;
                       
                       return (
@@ -417,7 +422,10 @@ export function FinalReviewPanel({
                 </span>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline">
+                <Button 
+                  variant="outline"
+                  onClick={() => window.history.back()}
+                >
                   ← Back to Edit
                 </Button>
                 <Button 
@@ -469,12 +477,4 @@ export function FinalReviewPanel({
       </div>
     </div>
   );
-}
-
-function parseTimeToSeconds(timeStr: string): number {
-  const parts = timeStr.split(':');
-  if (parts.length === 2) {
-    return parseInt(parts[0]) * 60 + parseFloat(parts[1]);
-  }
-  return parseFloat(timeStr);
 }

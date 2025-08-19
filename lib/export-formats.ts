@@ -31,9 +31,14 @@ function formatTimecode(tc: TimeCode): string {
 }
 
 /**
- * Parse time string like "1:30" or "0:05" to seconds
+ * Parse time string like "1:30" or "0:05" to seconds, or return number as-is
  */
-function parseTimeToSeconds(timeStr: string): number {
+function parseTimeToSeconds(timeStr: string | number): number {
+  // If already a number, return it
+  if (typeof timeStr === 'number') {
+    return timeStr;
+  }
+  
   const parts = timeStr.split(':').map(Number);
   if (parts.length === 2) {
     return parts[0] * 60 + parts[1];
@@ -59,7 +64,7 @@ export function generateFCPXML(
   
   // Sort segments by start time
   const sortedSegments = [...segments].sort((a, b) => 
-    parseTimeToSeconds(a.startTime) - parseTimeToSeconds(b.startTime)
+    parseTimeToSeconds(a.startTime as string | number) - parseTimeToSeconds(b.startTime as string | number)
   );
   
   // Calculate kept segments (inverse of removed segments)
@@ -67,8 +72,8 @@ export function generateFCPXML(
   let currentPosition = 0;
   
   for (const segment of sortedSegments) {
-    const segmentStart = parseTimeToSeconds(segment.startTime);
-    const segmentEnd = parseTimeToSeconds(segment.endTime);
+    const segmentStart = parseTimeToSeconds(segment.startTime as string | number);
+    const segmentEnd = parseTimeToSeconds(segment.endTime as string | number);
     
     // Add kept segment before this removed segment
     if (currentPosition < segmentStart) {
@@ -131,7 +136,7 @@ export function generateEDL(
 ): string {
   // Sort segments by start time
   const sortedSegments = [...segments].sort((a, b) => 
-    parseTimeToSeconds(a.startTime) - parseTimeToSeconds(b.startTime)
+    parseTimeToSeconds(a.startTime as string | number) - parseTimeToSeconds(b.startTime as string | number)
   );
   
   // Calculate kept segments
@@ -139,8 +144,8 @@ export function generateEDL(
   let currentPosition = 0;
   
   for (const segment of sortedSegments) {
-    const segmentStart = parseTimeToSeconds(segment.startTime);
-    const segmentEnd = parseTimeToSeconds(segment.endTime);
+    const segmentStart = parseTimeToSeconds(segment.startTime as string | number);
+    const segmentEnd = parseTimeToSeconds(segment.endTime as string | number);
     
     if (currentPosition < segmentStart) {
       keptSegments.push({ start: currentPosition, end: segmentStart });
@@ -202,8 +207,8 @@ export function generatePremiereXML(
   let currentPosition = 0;
   
   for (const segment of sortedSegments) {
-    const segmentStart = parseTimeToSeconds(segment.startTime);
-    const segmentEnd = parseTimeToSeconds(segment.endTime);
+    const segmentStart = parseTimeToSeconds(segment.startTime as string | number);
+    const segmentEnd = parseTimeToSeconds(segment.endTime as string | number);
     
     if (currentPosition < segmentStart) {
       keptSegments.push({ start: currentPosition, end: segmentStart });
