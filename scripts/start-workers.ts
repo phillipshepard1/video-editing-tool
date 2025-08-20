@@ -10,7 +10,7 @@ import { config } from 'dotenv';
 import path from 'path';
 
 // Load environment variables from .env.local
-config({ path: path.resolve(process.cwd(), '.env.local') });
+const result = config({ path: path.resolve(process.cwd(), '.env.local'), debug: true });
 
 // Verify environment variables are loaded
 // Check for either SUPABASE_SERVICE_KEY or SUPABASE_SERVICE_ROLE_KEY
@@ -30,6 +30,12 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !serviceKey) {
 
 // Set the service key to the expected variable name
 process.env.SUPABASE_SERVICE_ROLE_KEY = serviceKey;
+
+// Debug log the environment variables (without exposing sensitive data)
+console.log('Environment check:');
+console.log('- NEXT_PUBLIC_SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '✓ Set' : '✗ Missing');
+console.log('- SUPABASE_SERVICE_KEY:', process.env.SUPABASE_SERVICE_KEY ? '✓ Set' : '✗ Missing');
+console.log('- SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? '✓ Set' : '✗ Missing');
 
 import { initializeQueueSystem } from '../lib/queue-system-init';
 

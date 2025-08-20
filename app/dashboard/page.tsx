@@ -395,13 +395,46 @@ export default function DashboardPage() {
 
             {/* Use WorkflowManagerV2 if we have analysis data */}
             {(() => {
+              // Check both possible data formats
               const geminiData = currentJob.result_data?.gemini_processing as any;
-              const analysisData = geminiData?.analysis;
+              const assembleData = currentJob.result_data?.assemble_timeline as any;
+              
+              let analysisData = null;
+              let videoUrlToUse = currentJob.metadata?.videoUrl || '';
+              let originalDurationValue = 0;
+              
+              // Try to get data from either format
+              if (assembleData?.timeline) {
+                // Use assemble_timeline format - convert numeric times to strings
+                const convertedSegments = (assembleData.timeline.segmentsToRemove || []).map((seg: any) => ({
+                  ...seg,
+                  startTime: typeof seg.startTime === 'number' ? seg.startTime.toString() : seg.startTime,
+                  endTime: typeof seg.endTime === 'number' ? seg.endTime.toString() : seg.endTime
+                }));
+                
+                analysisData = {
+                  segmentsToRemove: convertedSegments,
+                  summary: assembleData.timeline.summary
+                };
+                originalDurationValue = assembleData.timeline.summary?.originalDuration || 180;
+                console.log('Using assemble_timeline data:', analysisData);
+              } else if (geminiData?.analysis) {
+                // Use gemini_processing format
+                analysisData = geminiData.analysis;
+                originalDurationValue = analysisData.summary?.originalDuration || 0;
+                console.log('Using gemini_processing data:', analysisData);
+              }
               
               if (!analysisData) {
                 return (
                   <div className="bg-white rounded-xl p-8 text-center">
-                    <p className="text-gray-500">Loading analysis data...</p>
+                    <p className="text-gray-500">No analysis data found</p>
+                    <Button 
+                      onClick={() => setView('dashboard')}
+                      className="mt-4"
+                    >
+                      Back to Dashboard
+                    </Button>
                   </div>
                 );
               }
@@ -409,20 +442,32 @@ export default function DashboardPage() {
               return (
                 <WorkflowManagerV2
                   segments={analysisData.segmentsToRemove || []}
-                  videoUrl={currentJob.metadata?.videoUrl || analysisData.videoUrl || ''}
-                  videoDuration={analysisData.summary?.originalDuration || videoDuration || 0}
-                  originalDuration={analysisData.summary?.originalDuration || 0}
-                videoRef={videoRef}
-                onSegmentSelect={setSelectedSegment}
-                  onExport={(format, segments) => {
-                    // Handle export
-                    console.log('Export requested:', format, segments);
+                  videoUrl={videoUrlToUse}
+                  videoDuration={originalDurationValue}
+                  originalDuration={originalDurationValue}
+                  videoRef={videoRef}
+                  onSegmentSelect={setSelectedSegment}
+                  onExport={(format, segmentsToRemove) => {
+                    console.log('Export requested:', format, segmentsToRemove);
+                    const fileName = currentJob.metadata?.originalFileName || 'video.mp4';
+                    const baseName = fileName.replace(/\.[^/.]+$/, ''); // Remove extension
+                    
+                    if (format === 'edl') {
+                      const content = generateEDL(segmentsToRemove, originalDurationValue, fileName);
+                      downloadFile(content, `${baseName}_edit.edl`, 'text/plain');
+                    } else if (format === 'fcpxml') {
+                      const content = generateFCPXML(segmentsToRemove, originalDurationValue, fileName);
+                      downloadFile(content, `${baseName}_edit.fcpxml`, 'application/xml');
+                    } else if (format === 'premiere') {
+                      const content = generatePremiereXML(segmentsToRemove, originalDurationValue, fileName);
+                      downloadFile(content, `${baseName}_edit.xml`, 'application/xml');
+                    }
                   }}
                   onNewAnalysis={() => {
                     setView('dashboard');
                     setCurrentJob(null);
                   }}
-                  supabaseUrl={analysisData.supabaseUrl}
+                  supabaseUrl={videoUrlToUse}
                 />
               );
             })()}
@@ -508,6 +553,7 @@ export default function DashboardPage() {
               <p className="text-gray-600 text-sm">Avg. Edit Time</p>
             </div>
             
+            
             <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 border border-gray-200 shadow-lg">
               <div className="flex items-center justify-between mb-4">
                 <BarChart3 className="w-8 h-8 text-pink-500" />
@@ -561,11 +607,24 @@ export default function DashboardPage() {
                   onJobSelect={(job) => {
                     console.log('Job selected for review:', job);
                     setCurrentJob(job);
-                    setView('review');
-                    // Load the job's analysis data if available
+                    
+                    // Load the job's analysis data from either gemini_processing or assemble_timeline
                     const geminiData = job.result_data?.gemini_processing as any;
-                    if (geminiData?.analysis) {
+                    const assembleData = job.result_data?.assemble_timeline as any;
+                    
+                    if (assembleData?.timeline) {
+                      // Convert assemble_timeline format to analysis format
+                      setAnalysis({
+                        segmentsToRemove: assembleData.timeline.segmentsToRemove || [],
+                        summary: assembleData.timeline.summary,
+                        supabaseUrl: job.metadata?.videoUrl
+                      });
+                      setView('review');
+                    } else if (geminiData?.analysis) {
                       setAnalysis(geminiData.analysis);
+                      setView('review');
+                    } else {
+                      console.error('No analysis data found in job');
                     }
                   }}
                   onJobDelete={(jobId) => {

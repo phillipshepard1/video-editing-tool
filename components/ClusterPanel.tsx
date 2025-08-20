@@ -37,8 +37,12 @@ export function ClusterPanel({
   const [clipBounds, setClipBounds] = useState<{ start: number; end: number } | null>(null);
 
   const handleSelectWinner = (clusterId: string, winnerIndex: number | 'gap') => {
+    console.log('handleSelectWinner called:', clusterId, winnerIndex);
     const cluster = clusters.find(c => c.id === clusterId);
-    if (!cluster) return;
+    if (!cluster) {
+      console.error('Cluster not found:', clusterId);
+      return;
+    }
 
     const selection: ClusterSelection = {
       clusterId,
@@ -47,6 +51,7 @@ export function ClusterPanel({
       keptSegments: []
     };
 
+    console.log('Calling onClusterSelection with:', selection);
     onClusterSelection(clusterId, selection);
   };
 

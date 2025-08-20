@@ -23,10 +23,23 @@ interface Job {
   metadata?: {
     originalFileName: string;
     originalFileSize: number;
+    videoUrl?: string;
+    videoPath?: string;
+    uploadedAt?: string;
+    fileType?: string;
+    fileSize?: number;
   };
   result_data?: {
     gemini_processing?: {
       totalSegments: number;
+      analysis?: any;
+    };
+    assemble_timeline?: {
+      timeline?: any;
+      success?: boolean;
+      timeReduction?: number;
+      segmentsToRemove?: number;
+      reductionPercentage?: number;
     };
     render_video?: {
       outputVideoUrl: string;
@@ -135,7 +148,7 @@ export function JobList({ onJobSelect, onJobDelete }: JobListProps) {
       {jobs.map((job) => (
         <Card 
           key={job.id} 
-          className={`p-4 transition-all hover:shadow-md ${
+          className={`p-4 transition-all hover:shadow-md cursor-pointer ${
             job.status === 'completed' ? 'hover:border-green-300' : ''
           }`}
         >
@@ -184,7 +197,8 @@ export function JobList({ onJobSelect, onJobDelete }: JobListProps) {
             </div>
 
             <div className="flex items-center space-x-2">
-              {job.status === 'completed' && (
+              {(job.status === 'completed' || 
+                (job.status === 'processing' && job.result_data?.assemble_timeline)) && (
                 <>
                   <Button
                     size="sm"

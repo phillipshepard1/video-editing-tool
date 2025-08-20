@@ -82,24 +82,43 @@ export async function POST(request: NextRequest) {
     }
 
     // Create the job first
-    const job = await jobQueue.createJob({
-      title,
-      description,
-      user_id: userId || undefined,
-      priority,
-      processing_options: {
-        quality: 'medium',
-        maxSizeBytes: 50 * 1024 * 1024, // 50MB chunks
-        ...processingOptions,
-      },
-      metadata: {
-        ...metadata,
-        originalFileName: file.name,
-        fileSize: file.size,
-        fileType: file.type,
-        uploadedAt: new Date().toISOString(),
-      },
-    });
+    let job;
+    try {
+      job = await jobQueue.createJob({
+        title,
+        description,
+        user_id: userId || undefined,
+        priority,
+        processing_options: {
+          quality: 'medium',
+          maxSizeBytes: 50 * 1024 * 1024, // 50MB chunks
+          ...processingOptions,
+        },
+        metadata: {
+          ...metadata,
+          originalFileName: file.name,
+          fileSize: file.size,
+          fileType: file.type,
+          uploadedAt: new Date().toISOString(),
+        },
+      });
+      
+      // Validate job was created with an ID
+      if (!job || !job.id) {
+        throw new Error('Job creation failed - no job ID returned');
+      }
+      
+      console.log('Job created successfully:', job.id);
+    } catch (error) {
+      console.error('Failed to create job:', error);
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `Failed to create job: ${error instanceof Error ? error.message : 'Unknown error'}`
+        },
+        { status: 500 }
+      );
+    }
 
     // Convert file to ArrayBuffer
     const arrayBuffer = await file.arrayBuffer();
@@ -192,7 +211,20 @@ export async function POST(request: NextRequest) {
 
     // Add all chunk records to database at once
     if (chunkRecords.length > 0) {
-      await jobQueue.addVideoChunks(job.id, chunkRecords);
+      try {
+        await jobQueue.addVideoChunks(job.id, chunkRecords);
+        console.log(`Added ${chunkRecords.length} chunk records for job ${job.id}`);
+      } catch (chunkError) {
+        // Log error but continue - chunks are optional for small files
+        console.error('Failed to add chunk records:', chunkError);
+        // For small files, we can continue without chunk records
+        if (chunks.length <= 1) {
+          console.log('Single chunk file, continuing without chunk records');
+        } else {
+          // For multi-chunk files, this is a critical error
+          throw chunkError;
+        }
+      }
     }
 
     // Enqueue for analysis

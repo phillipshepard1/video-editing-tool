@@ -36,8 +36,14 @@ export interface OverlapInfo {
   reason: string;
 }
 
-// Convert time string to seconds
-function parseTime(timeStr: string): number {
+// Convert time string or number to seconds
+function parseTime(timeStr: string | number): number {
+  // If already a number, return it
+  if (typeof timeStr === 'number') {
+    return timeStr;
+  }
+  
+  // Handle string format
   const parts = timeStr.split(':');
   if (parts.length === 2) {
     // MM:SS.mmm format

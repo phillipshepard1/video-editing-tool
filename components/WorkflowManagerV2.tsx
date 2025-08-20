@@ -74,27 +74,32 @@ export function WorkflowManagerV2({
     }
   }, [enhancedAnalysis]);
 
-  // Detect clusters on mount
+  // Detect clusters only on initial mount
+  const [clustersInitialized, setClustersInitialized] = useState(false);
+  
   useEffect(() => {
-    console.log('WorkflowManagerV2 received segments:', segments);
-    console.log('Segment count:', segments.length);
-    if (segments.length > 0) {
+    // Only run once when segments are first loaded
+    if (segments.length > 0 && !clustersInitialized) {
+      console.log('WorkflowManagerV2 received segments:', segments);
+      console.log('Segment count:', segments.length);
       console.log('First segment category:', segments[0].category);
       console.log('Segments with false_start:', segments.filter(s => s.category === 'false_start').length);
+      
+      const detectedClusters = detectClusters(segments);
+      console.log('Detected clusters:', detectedClusters);
+      setClusters(detectedClusters);
+      
+      // Initialize cluster selections with defaults
+      const defaultSelections: ClusterSelection[] = detectedClusters.map(cluster => ({
+        clusterId: cluster.id,
+        selectedWinner: (cluster.winner ? 'gap' : 0) as 'gap' | number,
+        removedSegments: cluster.attempts.map(a => a.id),
+        keptSegments: []
+      }));
+      setClusterSelections(defaultSelections);
+      setClustersInitialized(true);
     }
-    const detectedClusters = detectClusters(segments);
-    console.log('Detected clusters:', detectedClusters);
-    setClusters(detectedClusters);
-    
-    // Initialize cluster selections with defaults
-    const defaultSelections = detectedClusters.map(cluster => ({
-      clusterId: cluster.id,
-      selectedWinner: cluster.winner ? 'gap' : 0,
-      removedSegments: cluster.attempts.map(a => a.id),
-      keptSegments: []
-    }));
-    setClusterSelections(defaultSelections);
-  }, [segments]);
+  }, [segments, clustersInitialized]);
 
   // Update visible segments based on cluster selections
   useEffect(() => {
@@ -161,11 +166,14 @@ export function WorkflowManagerV2({
   }, [clusterSelections, clusters, visibleSegments, filterState, showGroupsView, contentGroups, takeSelections]);
 
   const handleClusterSelection = (clusterId: string, selection: ClusterSelection) => {
+    console.log('handleClusterSelection called:', clusterId, selection);
     setClusterSelections(prev => {
       const updated = prev.filter(s => s.clusterId !== clusterId);
       updated.push(selection);
+      console.log('Updated cluster selections:', updated);
       return updated;
     });
+    toast.success('Cluster selection updated');
   };
 
   // Handle take selection in groups view

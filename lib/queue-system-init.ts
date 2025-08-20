@@ -117,13 +117,8 @@ function setupGracefulShutdown() {
   });
 }
 
-// Auto-initialize in Node.js environment
-if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'test') {
-  // Initialize when imported (for server-side)
-  if (process.env.NEXT_PHASE !== 'phase-production-build') {
-    initializeQueueSystem().catch(console.error);
-  }
-}
+// Don't auto-initialize - let the scripts/start-workers.ts handle initialization
+// This prevents premature initialization before environment variables are loaded
 
 export default {
   initialize: initializeQueueSystem,

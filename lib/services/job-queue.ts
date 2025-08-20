@@ -99,10 +99,17 @@ export class JobQueueService {
 
   constructor(supabaseUrl?: string, supabaseKey?: string) {
     const serviceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-    this.supabase = createClient(
-      supabaseUrl || process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      supabaseKey || serviceKey!
-    );
+    const url = supabaseUrl || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = supabaseKey || serviceKey;
+    
+    if (!url) {
+      throw new Error('Supabase URL is required. Please set NEXT_PUBLIC_SUPABASE_URL environment variable.');
+    }
+    if (!key) {
+      throw new Error('Supabase service key is required. Please set SUPABASE_SERVICE_KEY or SUPABASE_SERVICE_ROLE_KEY environment variable.');
+    }
+    
+    this.supabase = createClient(url, key);
   }
 
   /**
@@ -169,7 +176,7 @@ export class JobQueueService {
    */
   async updateJob(
     jobId: string, 
-    updates: Partial<Pick<ProcessingJob, 'status' | 'current_stage' | 'progress_percentage' | 'stage_progress' | 'result_data' | 'last_error'>>
+    updates: Partial<Pick<ProcessingJob, 'status' | 'current_stage' | 'progress_percentage' | 'stage_progress' | 'result_data' | 'last_error' | 'started_at' | 'completed_at'>>
   ): Promise<ProcessingJob> {
     const updateData: any = { ...updates };
     
@@ -199,6 +206,18 @@ export class JobQueueService {
    * Add video chunks to a job
    */
   async addVideoChunks(jobId: string, chunks: Omit<VideoChunk, 'id' | 'job_id' | 'created_at' | 'updated_at'>[]): Promise<VideoChunk[]> {
+    // First verify the job exists
+    const { data: jobExists, error: jobCheckError } = await this.supabase
+      .from('processing_jobs')
+      .select('id')
+      .eq('id', jobId)
+      .single();
+    
+    if (jobCheckError || !jobExists) {
+      console.error(`Job validation failed for ${jobId}:`, jobCheckError);
+      throw new Error(`Cannot add chunks: Job ${jobId} not found in database`);
+    }
+    
     const chunkData = chunks.map(chunk => ({
       ...chunk,
       job_id: jobId,
@@ -210,6 +229,13 @@ export class JobQueueService {
       .select();
 
     if (error) {
+      console.error('Chunk insertion error details:', {
+        jobId,
+        chunkCount: chunks.length,
+        error: error.message,
+        hint: error.hint,
+        details: error.details
+      });
       throw new Error(`Failed to add video chunks: ${error.message}`);
     }
 
@@ -422,7 +448,7 @@ export class JobQueueService {
       .delete()
       .eq('job_id', jobId);
 
-    // Update job status
+    // Update job status with completed_at timestamp
     await this.updateJob(jobId, { 
       status: 'cancelled',
       completed_at: new Date().toISOString()
@@ -439,13 +465,14 @@ export class JobQueueService {
       .from('processing_jobs')
       .delete()
       .in('status', ['completed', 'failed', 'cancelled'])
-      .lt('created_at', cutoffDate.toISOString());
+      .lt('created_at', cutoffDate.toISOString())
+      .select();
 
     if (error) {
       throw new Error(`Failed to cleanup old jobs: ${error.message}`);
     }
 
-    return data ? data.length : 0;
+    return data ? (data as any[]).length : 0;
   }
 
   /**
@@ -537,6 +564,16 @@ let jobQueueInstance: JobQueueService | null = null;
 
 export function getJobQueueService(): JobQueueService {
   if (!jobQueueInstance) {
+    // Check environment variables before creating instance
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!url || !key) {
+      console.error('JobQueueService initialization error:');
+      console.error('- NEXT_PUBLIC_SUPABASE_URL:', url ? 'Set' : 'Missing');
+      console.error('- Service Key:', key ? 'Set' : 'Missing');
+    }
+    
     jobQueueInstance = new JobQueueService();
   }
   return jobQueueInstance;

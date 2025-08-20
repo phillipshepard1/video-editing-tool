@@ -203,22 +203,24 @@ export class AssemblyWorker extends BaseWorker {
       }
     });
 
-    // Queue for video rendering
-    await this.jobQueue.enqueueJob(job.job_id, 'render_video', {
-      timeline: processedTimeline,
-      renderInstructions: processedTimeline.renderInstructions
-    });
-
-    // Complete assembly stage
+    // DON'T automatically queue for rendering - let user review first!
+    // The user should trigger render manually after reviewing segments
+    
+    // Mark job as COMPLETED after assembly
     await this.jobQueue.updateJob(job.job_id, {
       progress_percentage: 100,
-      current_stage: 'render_video'
+      status: 'completed', // Mark as complete, ready for review
+      current_stage: 'assemble_timeline',
+      completed_at: new Date().toISOString()
     });
 
     return {
       success: true,
       timeline: processedTimeline,
-      nextStage: 'render_video'
+      timeReduction: processedTimeline.summary.timeReduction,
+      segmentsToRemove: processedTimeline.segmentsToRemove.length,
+      reductionPercentage: processedTimeline.summary.reductionPercentage,
+      // No nextStage - stops here for user review
     };
   }
 

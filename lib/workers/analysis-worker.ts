@@ -465,7 +465,7 @@ Return only valid JSON in this format:
     }
   }
 
-  private async waitForGeminiFileActive(fileUri: string, maxAttempts: number = 30): Promise<void> {
+  private async waitForGeminiFileActive(fileUri: string, maxAttempts: number = 120): Promise<void> {
     const fileId = fileUri.split('/').pop();
     
     for (let i = 0; i < maxAttempts; i++) {
@@ -486,14 +486,14 @@ Return only valid JSON in this format:
           }
         }
         
-        // Wait 3 seconds before next check
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        // Wait 5 seconds before next check (increased from 3)
+        await new Promise(resolve => setTimeout(resolve, 5000));
       } catch (error) {
         if (i === maxAttempts - 1) {
           throw error;
         }
         console.warn('Error checking Gemini file status, retrying:', error);
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
     }
     
