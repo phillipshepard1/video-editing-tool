@@ -50,7 +50,8 @@ export function QueueVideoUploader({ onJobCreated }: QueueVideoUploaderProps) {
       formData.append('processingOptions', JSON.stringify(processingOptions));
 
       // Upload to queue endpoint
-      const response = await fetch('/api/upload/queue', {
+      // Use fast endpoint for better performance
+      const response = await fetch('/api/upload/queue-fast', {
         method: 'POST',
         body: formData,
       });

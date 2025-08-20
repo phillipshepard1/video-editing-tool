@@ -7,7 +7,9 @@ import { BaseWorker } from './base-worker';
 import { UploadWorker } from './upload-worker';
 import { ChunkWorker } from './chunk-worker';
 import { StorageWorker } from './storage-worker';
+import { QueueAnalysisWorker } from './queue-analysis-worker';
 import { AnalysisWorker } from './analysis-worker';
+import { FastAnalysisWorker } from './analysis-worker-fast';
 import { AssemblyWorker } from './assembly-worker';
 import { RenderWorker } from './render-worker';
 import { ProcessingStage } from '../services/job-queue';
@@ -163,13 +165,26 @@ export class WorkerManager {
     }
 
     // Gemini processing workers
+    // Create both regular and fast workers
     for (let i = 0; i < workerCounts.gemini_processing!; i++) {
-      const workerId = `analysis-worker-${i + 1}`;
-      const worker = new AnalysisWorker(workerId);
-      this.workers.set(workerId, worker);
-      
-      if (this.options.autoStart !== false) {
-        await worker.start();
+      // First half are fast workers for whole video processing
+      if (i < Math.floor(workerCounts.gemini_processing! / 2)) {
+        const workerId = `fast-analysis-worker-${i + 1}`;
+        const worker = new FastAnalysisWorker(workerId);
+        this.workers.set(workerId, worker);
+        
+        if (this.options.autoStart !== false) {
+          await worker.start();
+        }
+      } else {
+        // Second half are regular workers for chunk processing
+        const workerId = `analysis-worker-${i + 1}`;
+        const worker = new AnalysisWorker(workerId);
+        this.workers.set(workerId, worker);
+        
+        if (this.options.autoStart !== false) {
+          await worker.start();
+        }
       }
     }
 

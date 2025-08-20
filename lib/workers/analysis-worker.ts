@@ -10,6 +10,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 export interface AnalysisJobPayload {
   chunksStored: number;
   readyForAnalysis: boolean;
+  processWholeVideo?: boolean; // For fast processing detection
   analysisOptions?: {
     prompt?: string;
     targetDuration?: number;
@@ -34,6 +35,13 @@ export class AnalysisWorker extends BaseWorker {
 
   async processJob(job: ClaimedJob): Promise<any> {
     const payload = job.payload as AnalysisJobPayload;
+    
+    // Skip if this is a fast processing job (whole video)
+    if (payload.processWholeVideo) {
+      console.log(`Job ${job.job_id} is for fast processing, skipping`);
+      await this.jobQueue.releaseJobClaim(job.queue_id);
+      return { skipped: true };
+    }
     
     if (!payload.readyForAnalysis) {
       throw new Error('Job not ready for analysis');
