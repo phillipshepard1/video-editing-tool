@@ -14,16 +14,16 @@ const nextConfig: NextConfig = {
   experimental: {
     // Increase body size limit for video uploads
     serverActions: {
-      bodySizeLimit: '100mb',
+      bodySizeLimit: '2gb',  // Updated to match 2GB limit across the system
     },
   },
   
   // API routes config
   api: {
     bodyParser: {
-      sizeLimit: '100mb',
+      sizeLimit: '2gb',  // Updated to match 2GB limit
     },
-    responseLimit: '100mb',
+    responseLimit: '2gb',  // Updated to match 2GB limit
   },
   
   // Allow video domains for Next.js Image component if needed
