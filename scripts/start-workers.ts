@@ -8,9 +8,23 @@
 
 import { config } from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 
-// Load environment variables from .env.local
-const result = config({ path: path.resolve(process.cwd(), '.env.local'), debug: true });
+// Try to load environment variables from .env.production first (for server), then .env.local (for development)
+const envProductionPath = path.resolve(process.cwd(), '.env.production');
+const envLocalPath = path.resolve(process.cwd(), '.env.local');
+
+let result;
+if (fs.existsSync(envProductionPath)) {
+  console.log('Loading environment from .env.production');
+  result = config({ path: envProductionPath, debug: true });
+} else if (fs.existsSync(envLocalPath)) {
+  console.log('Loading environment from .env.local');
+  result = config({ path: envLocalPath, debug: true });
+} else {
+  console.error('❌ No environment file found (.env.production or .env.local)');
+  process.exit(1);
+}
 
 // Verify environment variables are loaded
 // Check for either SUPABASE_SERVICE_KEY or SUPABASE_SERVICE_ROLE_KEY
@@ -24,7 +38,7 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !serviceKey) {
   if (!serviceKey) {
     console.error('   - SUPABASE_SERVICE_KEY (or SUPABASE_SERVICE_ROLE_KEY)');
   }
-  console.error('\nPlease ensure .env.local file exists with these variables.');
+  console.error('\nPlease ensure .env.production or .env.local file exists with these variables.');
   process.exit(1);
 }
 
