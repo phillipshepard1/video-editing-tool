@@ -61,9 +61,66 @@ export async function POST(request: NextRequest) {
     });
     console.log('Chillin request payload:', JSON.stringify(chillinRequest, null, 2));
 
-    // Submit the render job
-    const renderResponse = await submitRenderJob(chillinRequest, apiKey);
-    console.log('Chillin API response:', renderResponse);
+    // Submit the render job with enhanced error handling
+    let renderResponse;
+    try {
+      renderResponse = await submitRenderJob(chillinRequest, apiKey);
+      console.log('Chillin API response:', renderResponse);
+    } catch (submitError) {
+      console.error('Chillin render submission failed:', submitError);
+      
+      // Check if it's a known server issue
+      if (submitError instanceof Error) {
+        // Server down errors
+        if (submitError.message.includes('EOF') || 
+            submitError.message.includes('render servers') ||
+            submitError.message.includes('connection')) {
+          return NextResponse.json(
+            { 
+              error: 'Chillin render servers are currently experiencing issues',
+              details: 'The Chillin API render farm is down. This is a known issue on their end.',
+              serverError: true,
+              alternatives: [
+                { method: 'export_edl', description: 'Export as EDL for editing in Premiere/DaVinci' },
+                { method: 'export_xml', description: 'Export as XML for Final Cut Pro' },
+                { method: 'wait', description: 'Wait and try again later' },
+                { method: 'contact', description: 'Contact support@chillin.online for updates' }
+              ],
+              originalError: submitError.message
+            },
+            { status: 503 }
+          );
+        }
+        
+        // Credit errors
+        if (submitError.message.includes('credit') || submitError.message.includes('2008')) {
+          return NextResponse.json(
+            { 
+              error: 'Insufficient render credits',
+              details: submitError.message,
+              creditError: true,
+              addCreditsUrl: 'https://chillin.online/render-console'
+            },
+            { status: 402 }
+          );
+        }
+        
+        // Auth errors
+        if (submitError.message.includes('401') || submitError.message.includes('403')) {
+          return NextResponse.json(
+            { 
+              error: 'Authentication failed',
+              details: 'Your Chillin API key may be invalid or expired',
+              authError: true
+            },
+            { status: 401 }
+          );
+        }
+      }
+      
+      // Re-throw for generic error handling
+      throw submitError;
+    }
     
     // Handle various response formats from Chillin API
     const renderId = renderResponse.renderId;
@@ -102,10 +159,21 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Chillin render error:', error);
     console.log('Debug context:', { originalUrl: body?.videoUrl, segments: body?.segmentsToRemove?.length });
+    
+    // Provide actionable error response
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const isServerError = errorMessage.includes('EOF') || errorMessage.includes('connection');
+    
     return NextResponse.json(
       { 
         error: 'Failed to submit render job',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorMessage,
+        serverError: isServerError,
+        alternatives: isServerError ? [
+          'Try exporting as EDL/XML for local editing',
+          'Wait for Chillin servers to recover',
+          'Contact support@chillin.online'
+        ] : undefined
       },
       { status: 500 }
     );
@@ -147,12 +215,54 @@ export async function GET(request: NextRequest) {
     try {
       const status = await getRenderStatus(renderId, apiKey);
       
+      // Check if the status indicates server failure
+      if (status.error && 
+          (status.error.includes('EOF') || 
+           status.error.includes('connection') ||
+           status.error.includes('server timeout'))) {
+        return NextResponse.json({
+          success: false,
+          renderId,
+          status: 'failed',
+          error: status.error,
+          serverError: true,
+          message: 'Render failed due to Chillin server issues. Their render farm is down.',
+          alternatives: [
+            'Export as EDL/XML for local editing',
+            'Wait for server recovery',
+            'Contact support@chillin.online'
+          ]
+        });
+      }
+      
       return NextResponse.json({
         success: true,
         ...status
       });
     } catch (statusError) {
       console.error('Status check error:', statusError);
+      
+      // Check for server errors
+      if (statusError instanceof Error) {
+        const errorMsg = statusError.message;
+        
+        if (errorMsg.includes('EOF') || 
+            errorMsg.includes('connection') ||
+            errorMsg.includes('server timeout')) {
+          return NextResponse.json({
+            success: false,
+            renderId,
+            status: 'server_error',
+            error: 'Chillin render servers are currently down',
+            details: errorMsg,
+            serverError: true,
+            alternatives: [
+              'Export your timeline as EDL/XML instead',
+              'Try again later when servers recover'
+            ]
+          });
+        }
+      }
       
       // If it's a timeout, return a processing status instead of error
       if (statusError instanceof Error && statusError.message?.includes('timed out')) {

@@ -40,6 +40,7 @@ export function FinalReviewPanel({
   const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null);
   const [renderId, setRenderId] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [renderService, setRenderService] = useState<'shotstack' | 'chillin'>('shotstack'); // Default to Shotstack
   const timeRemoved = originalDuration - finalDuration;
   const reductionPercentage = ((timeRemoved / originalDuration) * 100).toFixed(1);
   
@@ -110,8 +111,14 @@ export function FinalReviewPanel({
         setRenderStatus('rendering');
       }
       
-      // Use URL-based rendering (no file size limits)
-      const response = await fetch('/api/render/chillin', {
+      // Use Shotstack by default (more reliable than Chillin)
+      const renderEndpoint = renderService === 'shotstack' 
+        ? '/api/render/shotstack'
+        : '/api/render/chillin';
+      
+      console.log(`Using ${renderService} for rendering`);
+      
+      const response = await fetch(renderEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -122,7 +129,8 @@ export function FinalReviewPanel({
           videoDuration: videoDuration || originalDuration,
           videoWidth: 1920,
           videoHeight: 1080,
-          fps: 30
+          fps: 30,
+          quality: 'high' // For Shotstack
         })
       });
       
@@ -137,6 +145,20 @@ export function FinalReviewPanel({
           videoUrl: publicUrl,
           segmentsCount: finalSegmentsToRemove.length
         });
+        
+        // Check if it's a server error and provide alternatives
+        if (renderData?.serverError) {
+          const alternativesMsg = renderData.alternatives 
+            ? '\n\nAlternatives:\n' + (Array.isArray(renderData.alternatives) 
+              ? renderData.alternatives.join('\n')
+              : renderData.alternatives.map((a: any) => a.description || a).join('\n'))
+            : '';
+          
+          throw new Error(
+            `Chillin render servers are currently down. This is a known issue on their end.${alternativesMsg}`
+          );
+        }
+        
         throw new Error(errorMessage);
       }
 
@@ -159,7 +181,11 @@ export function FinalReviewPanel({
         }
 
         try {
-          const statusResponse = await fetch(`/api/render/chillin?renderId=${renderData.renderId}`);
+          const statusEndpoint = renderService === 'shotstack'
+            ? `/api/render/shotstack?renderId=${renderData.renderId}`
+            : `/api/render/chillin?renderId=${renderData.renderId}`;
+          
+          const statusResponse = await fetch(statusEndpoint);
           const statusResult = await statusResponse.json();
           
           console.log(`Status check ${attempts + 1}:`, statusResult);
@@ -187,8 +213,20 @@ export function FinalReviewPanel({
             link.click();
             document.body.removeChild(link);
             
-          } else if (statusResult.status === 'failed') {
+          } else if (statusResult.status === 'failed' || statusResult.status === 'server_error') {
             console.error('Render failed:', statusResult);
+            
+            // Check if it's a server error
+            if (statusResult.serverError) {
+              const alternatives = statusResult.alternatives 
+                ? '\n\nWhat you can do:\n• ' + statusResult.alternatives.join('\n• ')
+                : '';
+              
+              throw new Error(
+                `Chillin servers are down: ${statusResult.error || statusResult.details}${alternatives}`
+              );
+            }
+            
             throw new Error(statusResult.error || 'Render failed');
           } else if (statusResult.status === 'error') {
             console.error('Render error:', statusResult);
@@ -218,14 +256,30 @@ export function FinalReviewPanel({
     } catch (error) {
       console.error('Render error:', error);
       setRenderStatus('error');
-      setRenderError(error instanceof Error ? error.message : 'Failed to render video');
+      
+      let errorMessage = error instanceof Error ? error.message : 'Failed to render video';
+      
+      // Check if it contains server error indicators
+      if (errorMessage.includes('EOF') || 
+          errorMessage.includes('server timeout') ||
+          errorMessage.includes('servers are down')) {
+        errorMessage = '⚠️ Chillin render servers are currently experiencing issues.\n\n' +
+                      'This is a known problem on their end (server error: EOF).\n\n' +
+                      'What you can do instead:\n' +
+                      '• Export your timeline as EDL/XML for local editing\n' +
+                      '• Wait and try again later\n' +
+                      '• Contact support@chillin.online for status updates';
+      }
+      
+      setRenderError(errorMessage);
       
       // Log additional context for debugging
       console.log('Debug info:', {
         videoUrl,
         segmentsCount: finalSegmentsToRemove.length,
         videoDuration: videoDuration || originalDuration,
-        renderId
+        renderId,
+        error: errorMessage
       });
     }
   };
@@ -299,6 +353,33 @@ export function FinalReviewPanel({
                 </Button>
                 
                 <div className="border-t mt-3 pt-3">
+                  {/* Render Service Toggle */}
+                  <div className="mb-3 p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                    <label className="text-sm font-medium mb-1 block">Render Service:</label>
+                    <div className="flex gap-2">
+                      <button
+                        className={`flex-1 px-3 py-1 text-xs rounded transition-colors ${
+                          renderService === 'shotstack' 
+                            ? 'bg-blue-600 text-white' 
+                            : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                        }`}
+                        onClick={() => setRenderService('shotstack')}
+                      >
+                        Shotstack (Recommended)
+                      </button>
+                      <button
+                        className={`flex-1 px-3 py-1 text-xs rounded transition-colors ${
+                          renderService === 'chillin' 
+                            ? 'bg-blue-600 text-white' 
+                            : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                        }`}
+                        onClick={() => setRenderService('chillin')}
+                      >
+                        Chillin (Backup)
+                      </button>
+                    </div>
+                  </div>
+                  
                   <Button
                     className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white"
                     onClick={handleRenderVideo}
