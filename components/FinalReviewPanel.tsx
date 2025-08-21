@@ -205,10 +205,14 @@ export function FinalReviewPanel({
             setRenderProgress(100);
             setRenderedVideoUrl(statusResult.outputUrl);
             
-            // Download the video
+            // Open the video in a new tab
+            window.open(statusResult.outputUrl, '_blank');
+            
+            // Also trigger download
             const link = document.createElement('a');
             link.href = statusResult.outputUrl;
             link.download = `edited_video_${Date.now()}.mp4`;
+            link.target = '_blank';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
