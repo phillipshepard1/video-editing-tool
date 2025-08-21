@@ -381,27 +381,43 @@ export async function submitRenderJob(
   if (request.compositeWidth > 1920 || request.compositeHeight > 1920) {
     console.log('High resolution render - ensuring optimal settings');
   }
-  const response = await fetch('https://render-api.chillin.online/render/v1', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'X-Render-Quality': qualityOptions?.quality || 'high',
-      'X-Render-Priority': 'quality' // Prioritize quality over speed
-    },
-    body: JSON.stringify(request)
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Chillin API error: ${error}`);
-  }
-
-  const result = await response.json();
-  console.log('Raw Chillin API response:', JSON.stringify(result, null, 2));
   
-  // Check if successful response (code 0 means success)
-  if (result.code === 0 && result.data) {
+  try {
+    const response = await fetch('https://render-api.chillin.online/render/v1', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'X-Render-Quality': qualityOptions?.quality || 'high',
+        'X-Render-Priority': 'quality' // Prioritize quality over speed
+      },
+      body: JSON.stringify(request)
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      
+      // Parse specific error codes
+      try {
+        const errorData = JSON.parse(error);
+        if (errorData.code === 2008) {
+          throw new Error('Chillin API: Insufficient render credits. Please add credits at https://chillin.online/render-console');
+        }
+        if (errorData.code === 403) {
+          throw new Error('Chillin API: Authentication failed. Please check your API key.');
+        }
+        throw new Error(`Chillin API error (${errorData.code}): ${errorData.msg || error}`);
+      } catch (parseError) {
+        // If not JSON, return raw error
+        throw new Error(`Chillin API error: ${error}`);
+      }
+    }
+
+    const result = await response.json();
+    console.log('Raw Chillin API response:', JSON.stringify(result, null, 2));
+  
+    // Check if successful response (code 0 means success)
+    if (result.code === 0 && result.data) {
     const renderId = result.data.render_id || result.data.renderId;
     console.log(`Found render ID: ${renderId}`);
     return {
@@ -412,18 +428,41 @@ export async function submitRenderJob(
     };
   }
   
-  // Handle error response
-  if (result.code !== 0) {
-    console.error('Chillin API error:', result.msg);
-    throw new Error(result.msg || 'API error');
-  }
+    // Handle error response
+    if (result.code !== 0) {
+      console.error('Chillin API error:', result.msg);
+      
+      // Check for specific error codes
+      if (result.msg && result.msg.includes('EOF')) {
+        throw new Error('Chillin render servers are currently unavailable. This is a temporary server issue. Please try again later or contact support@chillin.online');
+      }
+      if (result.msg && result.msg.includes('connection')) {
+        throw new Error('Chillin API connection issue. Their render servers may be down. Please try again later.');
+      }
+      
+      throw new Error(result.msg || 'API error');
+    }
   
-  return {
-    renderId: null,
-    status: 'failed' as const,
-    outputUrl: undefined,
-    error: result.msg || 'Unknown error'
-  };
+    return {
+      renderId: null,
+      status: 'failed' as const,
+      outputUrl: undefined,
+      error: result.msg || 'Unknown error'
+    };
+    
+  } catch (error) {
+    console.error('Chillin API request failed:', error);
+    
+    // Provide user-friendly error messages
+    if (error instanceof Error) {
+      if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+        throw new Error('Cannot connect to Chillin API. Please check your internet connection or try again later.');
+      }
+      throw error;
+    }
+    
+    throw new Error('Unexpected error while submitting render job');
+  }
 }
 
 // Poll for render status
