@@ -165,26 +165,42 @@ export class WorkerManager {
     }
 
     // Gemini processing workers
-    // Create both regular and fast workers
-    for (let i = 0; i < workerCounts.gemini_processing!; i++) {
-      // First half are fast workers for whole video processing
-      if (i < Math.floor(workerCounts.gemini_processing! / 2)) {
-        const workerId = `fast-analysis-worker-${i + 1}`;
-        const worker = new FastAnalysisWorker(workerId);
-        this.workers.set(workerId, worker);
-        
-        if (this.options.autoStart !== false) {
-          await worker.start();
-        }
-      } else {
-        // Second half are regular workers for chunk processing
-        const workerId = `analysis-worker-${i + 1}`;
-        const worker = new AnalysisWorker(workerId);
-        this.workers.set(workerId, worker);
-        
-        if (this.options.autoStart !== false) {
-          await worker.start();
-        }
+    // Create both regular and fast workers with better distribution
+    // Ensure at least one of each type if we have 2+ workers
+    const geminiWorkerCount = workerCounts.gemini_processing!;
+    let fastWorkerCount = Math.max(1, Math.floor(geminiWorkerCount / 2));
+    let regularWorkerCount = Math.max(1, geminiWorkerCount - fastWorkerCount);
+    
+    // If we only have 1 worker total, alternate between types
+    if (geminiWorkerCount === 1) {
+      // Create both types but only one will be active
+      fastWorkerCount = 1;
+      regularWorkerCount = 1;
+    }
+    
+    console.log(`Creating Gemini workers: ${fastWorkerCount} fast, ${regularWorkerCount} regular`);
+    
+    // Create fast workers for whole video processing
+    for (let i = 0; i < fastWorkerCount; i++) {
+      const workerId = `fast-analysis-worker-${i + 1}`;
+      const worker = new FastAnalysisWorker(workerId);
+      this.workers.set(workerId, worker);
+      
+      if (this.options.autoStart !== false) {
+        await worker.start();
+        console.log(`Started ${workerId} for whole video processing`);
+      }
+    }
+    
+    // Create regular workers for chunk processing
+    for (let i = 0; i < regularWorkerCount; i++) {
+      const workerId = `analysis-worker-${i + 1}`;
+      const worker = new AnalysisWorker(workerId);
+      this.workers.set(workerId, worker);
+      
+      if (this.options.autoStart !== false) {
+        await worker.start();
+        console.log(`Started ${workerId} for chunked processing`);
       }
     }
 

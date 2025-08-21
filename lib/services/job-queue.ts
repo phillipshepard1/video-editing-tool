@@ -330,15 +330,33 @@ export class JobQueueService {
 
   /**
    * Release job claim (if worker can't process it)
+   * Now with optional re-queue delay to prevent immediate reclaim
    */
-  async releaseJobClaim(queueId: string): Promise<void> {
-    const { error } = await this.supabase
+  async releaseJobClaim(queueId: string, requeueDelaySeconds: number = 0): Promise<void> {
+    // First release the claim
+    const { error: releaseError } = await this.supabase
       .rpc('release_job_claim', {
         queue_id_param: queueId
       });
 
-    if (error) {
-      throw new Error(`Failed to release job claim: ${error.message}`);
+    if (releaseError) {
+      throw new Error(`Failed to release job claim: ${releaseError.message}`);
+    }
+    
+    // If a delay is specified, update the next_attempt_at to prevent immediate reclaim
+    if (requeueDelaySeconds > 0) {
+      const nextAttempt = new Date(Date.now() + (requeueDelaySeconds * 1000));
+      const { error: updateError } = await this.supabase
+        .from('job_queue')
+        .update({ 
+          next_attempt_at: nextAttempt.toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', queueId);
+      
+      if (updateError) {
+        console.warn(`Failed to set re-queue delay: ${updateError.message}`);
+      }
     }
   }
 
@@ -455,6 +473,51 @@ export class JobQueueService {
     });
   }
 
+  /**
+   * Recover stuck jobs (jobs claimed but not processed within timeout)
+   * This helps unstick jobs that got stuck between workers
+   */
+  async recoverStuckJobs(stuckMinutes: number = 10): Promise<number> {
+    const cutoffTime = new Date(Date.now() - (stuckMinutes * 60 * 1000));
+    
+    // Find jobs that have been claimed but not processed
+    const { data: stuckJobs, error: findError } = await this.supabase
+      .from('job_queue')
+      .select('id, job_id, stage, worker_id')
+      .not('worker_id', 'is', null)
+      .lt('claim_expires_at', new Date().toISOString())
+      .lt('claimed_at', cutoffTime.toISOString());
+    
+    if (findError) {
+      console.error('Failed to find stuck jobs:', findError);
+      return 0;
+    }
+    
+    if (!stuckJobs || stuckJobs.length === 0) {
+      return 0;
+    }
+    
+    console.log(`Found ${stuckJobs.length} stuck jobs to recover`);
+    
+    // Release all stuck jobs
+    for (const job of stuckJobs) {
+      try {
+        await this.releaseJobClaim(job.id, 5); // 5 second delay before re-queue
+        await this.addLog(
+          job.job_id,
+          'warn',
+          job.stage,
+          `Job recovered from stuck state (was claimed by ${job.worker_id})`,
+          { recoveredAt: new Date().toISOString() }
+        );
+      } catch (error) {
+        console.error(`Failed to recover stuck job ${job.id}:`, error);
+      }
+    }
+    
+    return stuckJobs.length;
+  }
+  
   /**
    * Clean up old completed/failed jobs
    */

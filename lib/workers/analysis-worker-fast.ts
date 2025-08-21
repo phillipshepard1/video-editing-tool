@@ -38,10 +38,36 @@ export class FastAnalysisWorker extends BaseWorker {
     // Check if this is a whole video processing job
     if (!payload.processWholeVideo) {
       // Skip this job for regular analysis worker to handle
-      console.log(`Job ${job.job_id} is not for fast processing, skipping`);
-      await this.jobQueue.releaseJobClaim(job.queue_id);
-      return { skipped: true };
+      console.log(`[FastAnalysisWorker] Job ${job.job_id} is for chunked processing, releasing and re-queuing`);
+      
+      try {
+        // Release the claim
+        await this.jobQueue.releaseJobClaim(job.queue_id);
+        
+        // Log that we're passing it to regular worker
+        await this.jobQueue.addLog(
+          job.job_id,
+          'info',
+          'gemini_processing',
+          'Job requires chunked processing, passing to regular AnalysisWorker',
+          { 
+            workerId: this.options.workerId,
+            processWholeVideo: false 
+          },
+          this.options.workerId
+        );
+        
+        // Small delay to prevent immediate reclaim by same worker type
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+      } catch (error) {
+        console.error(`[FastAnalysisWorker] Error releasing job ${job.job_id}:`, error);
+      }
+      
+      return { skipped: true, reason: 'chunked_processing_required' };
     }
+    
+    console.log(`[FastAnalysisWorker] Processing whole video job ${job.job_id}`);
 
     // Log start
     await this.jobQueue.addLog(
@@ -49,7 +75,11 @@ export class FastAnalysisWorker extends BaseWorker {
       'info',
       'gemini_processing',
       'Starting FAST Gemini analysis (whole video)',
-      { videoUrl: payload.videoUrl },
+      { 
+        videoUrl: payload.videoUrl,
+        workerId: this.options.workerId,
+        workerType: 'FastAnalysisWorker'
+      },
       this.options.workerId
     );
 
