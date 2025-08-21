@@ -10,18 +10,35 @@ import { EnhancedSegment } from '@/lib/types/segments';
 const SHOTSTACK_API_URL = 'https://api.shotstack.io';
 const SHOTSTACK_CDN_URL = 'https://cdn.shotstack.io';
 
-export interface ShotstackClip {
-  asset: {
-    type: 'video' | 'audio' | 'image';
-    src: string;
-    trim?: {
-      start: number;
-      end: number;
-    };
+// Shotstack Clip structure - video clips don't use 'asset' field!
+export interface ShotstackVideoClip {
+  // For video clips, we don't use 'asset' - video properties go directly on the clip
+  src: string;  // Video URL
+  trim?: number;  // Start time in seconds
+  volume?: number;
+  start: number;  // Position in timeline
+  length: number;  // Duration to play
+  fit?: 'cover' | 'contain' | 'crop' | 'none';
+  scale?: number;
+  position?: 'top' | 'topRight' | 'right' | 'bottomRight' | 'bottom' | 'bottomLeft' | 'left' | 'topLeft' | 'center';
+  offset?: {
+    x?: number;
+    y?: number;
   };
+  transition?: {
+    in?: string;
+    out?: string;
+  };
+}
+
+export interface ShotstackClip {
+  asset?: any;  // For non-video assets
+  src?: string;  // For video clips
+  trim?: number;
+  volume?: number;
   start: number;
   length: number;
-  fit?: 'cover' | 'contain' | 'crop';
+  fit?: 'cover' | 'contain' | 'crop' | 'none';
   scale?: number;
   position?: 'top' | 'topRight' | 'right' | 'bottomRight' | 'bottom' | 'bottomLeft' | 'left' | 'topLeft' | 'center';
   offset?: {
@@ -108,17 +125,13 @@ export function buildShotstackTimeline(
     if (segmentStart > lastEnd) {
       const clipLength = segmentStart - lastEnd;
       
+      // Create video clip - Shotstack video clips don't use 'asset' wrapper
       clips.push({
-        asset: {
-          type: 'video',
-          src: videoUrl,
-          trim: {
-            start: lastEnd,
-            end: segmentStart
-          }
-        },
-        start: outputPosition,
-        length: clipLength,
+        src: videoUrl,  // Video source directly on clip
+        trim: lastEnd,  // Start time in source video (seconds)
+        start: outputPosition,  // Position in output timeline
+        length: clipLength,  // Duration to play
+        volume: 1,
         fit: 'crop'
       });
 
@@ -133,17 +146,13 @@ export function buildShotstackTimeline(
   if (lastEnd < videoDuration) {
     const clipLength = videoDuration - lastEnd;
     
+    // Create final video clip - Shotstack video clips don't use 'asset' wrapper
     clips.push({
-      asset: {
-        type: 'video',
-        src: videoUrl,
-        trim: {
-          start: lastEnd,
-          end: videoDuration
-        }
-      },
-      start: outputPosition,
-      length: clipLength,
+      src: videoUrl,  // Video source directly on clip
+      trim: lastEnd,  // Start time in source video (seconds)
+      start: outputPosition,  // Position in output timeline
+      length: clipLength,  // Duration to play
+      volume: 1,
       fit: 'crop'
     });
 
