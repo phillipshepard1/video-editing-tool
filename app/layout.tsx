@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "../src/contexts/AuthContext";
 import { Toaster } from "react-hot-toast";
+import ErrorBoundary from "../src/components/ErrorBoundary";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,32 +33,34 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <AuthProvider>
-          <Toaster 
-            position="top-right"
-            toastOptions={{
-              duration: 4000,
-              style: {
-                background: '#1f2937',
-                color: '#f3f4f6',
-                border: '1px solid #374151',
-              },
-              success: {
-                iconTheme: {
-                  primary: '#10b981',
-                  secondary: '#f3f4f6',
+        <ErrorBoundary>
+          <AuthProvider>
+            <Toaster 
+              position="top-right"
+              toastOptions={{
+                duration: 4000,
+                style: {
+                  background: '#1f2937',
+                  color: '#f3f4f6',
+                  border: '1px solid #374151',
                 },
-              },
-              error: {
-                iconTheme: {
-                  primary: '#ef4444',
-                  secondary: '#f3f4f6',
+                success: {
+                  iconTheme: {
+                    primary: '#10b981',
+                    secondary: '#f3f4f6',
+                  },
                 },
-              },
-            }}
-          />
-          {children}
-        </AuthProvider>
+                error: {
+                  iconTheme: {
+                    primary: '#ef4444',
+                    secondary: '#f3f4f6',
+                  },
+                },
+              }}
+            />
+            {children}
+          </AuthProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );
