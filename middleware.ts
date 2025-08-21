@@ -2,6 +2,8 @@ import { type NextRequest } from 'next/server'
 import { updateSession } from './utils/supabase/middleware'
 import { NextResponse } from 'next/server'
 
+export const runtime = 'nodejs' // Use Node.js runtime instead of Edge
+
 export async function middleware(request: NextRequest) {
   // Update user session
   const { response, user } = await updateSession(request)

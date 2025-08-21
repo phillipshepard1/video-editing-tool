@@ -17,6 +17,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Video Editor Pro - AI-Powered Video Editing",
   description: "Professional video editing tool with AI analysis and enhancement capabilities",
+  icons: {
+    icon: '/favicon.ico',
+  },
 };
 
 export default function RootLayout({
