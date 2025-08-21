@@ -18,19 +18,14 @@ const nextConfig: NextConfig = {
     },
   },
   
-  // API routes config
-  api: {
-    bodyParser: {
-      sizeLimit: '2gb',  // Updated to match 2GB limit
-    },
-    responseLimit: '2gb',  // Updated to match 2GB limit
-  },
-  
   // Allow video domains for Next.js Image component if needed
   images: {
     domains: [
       'leeslkgwtmgfewsbxwyu.supabase.co', // Your Supabase domain
       'render-api.chillin.online',
+      'shotstack-api-v1-output.s3-ap-southeast-2.amazonaws.com', // Shotstack output CDN
+      'shotstack-assets.s3.ap-southeast-2.amazonaws.com', // Shotstack assets CDN
+      'cdn.shotstack.io', // Shotstack main CDN
     ],
   },
   
