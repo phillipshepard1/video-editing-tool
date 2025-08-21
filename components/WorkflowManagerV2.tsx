@@ -245,6 +245,26 @@ export function WorkflowManagerV2({
 
   return (
     <div className="space-y-4">
+      {/* Save Session Header */}
+      <Card className="p-4 bg-white border-gray-200 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-semibold text-gray-900">Video Analysis Editor</h2>
+            {originalFilename && (
+              <span className="text-sm text-gray-500">• {originalFilename}</span>
+            )}
+          </div>
+          <Button
+            onClick={() => setShowSaveDialog(true)}
+            className="flex items-center gap-2 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white"
+            disabled={isSaving}
+          >
+            <BookmarkPlus className="w-4 h-4" />
+            {isSaving ? 'Saving...' : 'Save Session'}
+          </Button>
+        </div>
+      </Card>
+
       {/* View Mode Toggle */}
       {contentGroups.length > 0 && (
         <Card className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">

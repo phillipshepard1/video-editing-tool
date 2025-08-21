@@ -17,6 +17,7 @@ import {
   FolderOpen, Plus, Grid, List, Search, Filter, Briefcase
 } from 'lucide-react';
 import { formatTime, formatFileSize } from '@/lib/utils';
+import { formatDistanceToNow } from 'date-fns';
 import { EnhancedSegment, FilterState, createDefaultFilterState, SegmentCategory } from '@/lib/types/segments';
 import { EnhancedAnalysisResult } from '@/lib/types/takes';
 import { createMockEnhancedAnalysis } from '@/lib/take-converter';
@@ -73,42 +74,76 @@ export default function DashboardPage() {
   const [filterState, setFilterState] = useState<FilterState>(createDefaultFilterState());
   const [visibleSegments, setVisibleSegments] = useState<EnhancedSegment[]>([]);
 
-  // Mock data for recent projects (in production, this would come from Supabase)
-  const [recentProjects] = useState<RecentProject[]>([
-    {
-      id: '1',
-      name: 'Product Demo Video',
-      duration: '5:23',
-      editedAt: '2 hours ago',
-      segmentsRemoved: 12,
-      timeSaved: '1:45',
-      renderQuality: 'hd',
-      fileSize: '45.2 MB',
-      resolution: '1080p'
-    },
-    {
-      id: '2',
-      name: 'Tutorial - Getting Started',
-      duration: '10:15',
-      editedAt: 'Yesterday',
-      segmentsRemoved: 28,
-      timeSaved: '3:20',
-      renderQuality: 'standard',
-      fileSize: '78.5 MB',
-      resolution: '720p'
-    },
-    {
-      id: '3',
-      name: 'Interview with CEO',
-      duration: '15:42',
-      editedAt: '3 days ago',
-      segmentsRemoved: 45,
-      timeSaved: '5:10',
-      renderQuality: 'premium',
-      fileSize: '156.8 MB',
-      resolution: '4K'
-    }
-  ]);
+  // Fetch real recent projects from completed jobs
+  const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(true);
+  
+  // Fetch recent completed jobs
+  useEffect(() => {
+    const fetchRecentProjects = async () => {
+      try {
+        const response = await fetch('/api/jobs?status=completed&limit=6');
+        if (response.ok) {
+          const data = await response.json();
+          const jobs = data.jobs || [];
+          
+          // Transform jobs into recent projects format
+          const projects = jobs.map((job: any) => {
+            const assembleData = job.result_data?.assemble_timeline;
+            const geminiData = job.result_data?.gemini_processing;
+            const metadata = job.metadata || {};
+            
+            // Calculate time saved
+            let timeSaved = '0:00';
+            let segmentsRemoved = 0;
+            
+            if (assembleData?.timeReduction) {
+              const minutes = Math.floor(assembleData.timeReduction / 60);
+              const seconds = Math.floor(assembleData.timeReduction % 60);
+              timeSaved = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+              segmentsRemoved = assembleData.segmentsToRemove || 0;
+            } else if (geminiData?.analysis?.summary) {
+              const timeRemovedSec = geminiData.analysis.summary.timeRemoved || 0;
+              const minutes = Math.floor(timeRemovedSec / 60);
+              const seconds = Math.floor(timeRemovedSec % 60);
+              timeSaved = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+              segmentsRemoved = geminiData.analysis.summary.segmentCount || 0;
+            }
+            
+            // Format duration
+            const duration = metadata.videoDuration 
+              ? `${Math.floor(metadata.videoDuration / 60)}:${Math.floor(metadata.videoDuration % 60).toString().padStart(2, '0')}`
+              : 'N/A';
+            
+            // Format edited time
+            const editedAt = job.completed_at 
+              ? formatDistanceToNow(new Date(job.completed_at), { addSuffix: true })
+              : formatDistanceToNow(new Date(job.created_at), { addSuffix: true });
+            
+            return {
+              id: job.id,
+              name: metadata.originalFileName || job.title || 'Untitled Video',
+              duration,
+              editedAt,
+              segmentsRemoved,
+              timeSaved,
+              renderQuality: metadata.quality || 'standard',
+              fileSize: metadata.fileSize ? formatFileSize(metadata.fileSize) : 'N/A',
+              resolution: metadata.resolution || '1080p'
+            };
+          });
+          
+          setRecentProjects(projects.slice(0, 3)); // Show only 3 most recent
+        }
+      } catch (error) {
+        console.error('Failed to fetch recent projects:', error);
+      } finally {
+        setLoadingProjects(false);
+      }
+    };
+    
+    fetchRecentProjects();
+  }, [refreshJobList]); // Refresh when job list updates
 
   // Stats (in production, these would be calculated from user data)
   const stats = {
@@ -655,7 +690,14 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {recentProjects.length > 0 ? (
+            {loadingProjects ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-600 mx-auto mb-4"></div>
+                  <p className="text-gray-600">Loading recent projects...</p>
+                </div>
+              </div>
+            ) : recentProjects.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {recentProjects.map((project) => (
                   <div

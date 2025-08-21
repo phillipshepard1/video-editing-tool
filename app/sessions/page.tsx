@@ -47,8 +47,15 @@ export default function SessionsPage() {
       const data = await response.json();
 
       if (response.ok) {
-        setSessions(data.sessions);
+        console.log('Sessions fetched:', data.sessions);
+        setSessions(data.sessions || []);
+        
+        // Show message if no sessions
+        if (!data.sessions || data.sessions.length === 0) {
+          console.log('No sessions found for user');
+        }
       } else {
+        console.error('Failed to fetch sessions:', data.error);
         setError(data.error || 'Failed to fetch sessions');
       }
     } catch (err) {
