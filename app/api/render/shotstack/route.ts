@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { 
-  buildShotstackRequest, 
   submitShotstackRender, 
-  getShotstackRenderStatus,
-  checkShotstackHealth 
-} from '@/lib/services/shotstack';
+  checkShotstackRender
+} from '@/lib/services/shotstack-v2';
+import { checkShotstackHealth } from '@/lib/services/shotstack';
 import { EnhancedSegment } from '@/lib/types/segments';
 
 /**
@@ -53,21 +52,13 @@ export async function POST(request: NextRequest) {
       quality: quality || 'high'
     });
 
-    // Build the Shotstack request
-    const shotstackRequest = buildShotstackRequest(
+    // Submit the render job using v2 implementation
+    const renderResponse = await submitShotstackRender(
       videoUrl,
       segmentsToRemove as EnhancedSegment[],
       videoDuration,
-      videoWidth || 1920,
-      videoHeight || 1080,
-      quality || 'high'
-    );
-
-    // Submit the render job
-    const renderResponse = await submitShotstackRender(
-      shotstackRequest.timeline,
       apiKey,
-      shotstackRequest.output
+      process.env.SHOTSTACK_ENV || 'v1'
     );
 
     if (!renderResponse.success || !renderResponse.response?.id) {
@@ -150,7 +141,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const statusResponse = await getShotstackRenderStatus(renderId, apiKey);
+    const statusResponse = await checkShotstackRender(renderId, apiKey, process.env.SHOTSTACK_ENV || 'v1');
 
     if (!statusResponse.success || !statusResponse.response) {
       return NextResponse.json({

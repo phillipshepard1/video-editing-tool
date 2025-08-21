@@ -125,13 +125,17 @@ export function buildShotstackTimeline(
     if (segmentStart > lastEnd) {
       const clipLength = segmentStart - lastEnd;
       
-      // Create video clip - Shotstack video clips don't use 'asset' wrapper
+      // Create video clip with asset wrapper
+      // Shotstack requires 'asset' field but video type goes in the asset
       clips.push({
-        src: videoUrl,  // Video source directly on clip
-        trim: lastEnd,  // Start time in source video (seconds)
+        asset: {
+          type: 'video' as any,  // Force video type even if not in enum
+          src: videoUrl,
+          trim: lastEnd,  // Start time in source video (seconds)
+          volume: 1
+        },
         start: outputPosition,  // Position in output timeline
         length: clipLength,  // Duration to play
-        volume: 1,
         fit: 'crop'
       });
 
@@ -146,13 +150,17 @@ export function buildShotstackTimeline(
   if (lastEnd < videoDuration) {
     const clipLength = videoDuration - lastEnd;
     
-    // Create final video clip - Shotstack video clips don't use 'asset' wrapper
+    // Create final video clip with asset wrapper
+    // Shotstack requires 'asset' field but video type goes in the asset
     clips.push({
-      src: videoUrl,  // Video source directly on clip
-      trim: lastEnd,  // Start time in source video (seconds)
+      asset: {
+        type: 'video' as any,  // Force video type even if not in enum
+        src: videoUrl,
+        trim: lastEnd,  // Start time in source video (seconds)
+        volume: 1
+      },
       start: outputPosition,  // Position in output timeline
       length: clipLength,  // Duration to play
-      volume: 1,
       fit: 'crop'
     });
 
