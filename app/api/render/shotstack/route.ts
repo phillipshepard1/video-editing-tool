@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { 
   submitShotstackRender, 
   checkShotstackRender
-} from '@/lib/services/shotstack-v3';  // Use V3 with fixes
+} from '@/lib/services/shotstack-v4';  // Use V4 - final fix for freezing
 import { checkShotstackHealth } from '@/lib/services/shotstack';
 import { EnhancedSegment } from '@/lib/types/segments';
 
