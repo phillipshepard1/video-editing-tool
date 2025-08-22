@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { 
   Video, Clock, Calendar, Play, Trash2, 
-  FolderOpen, ArrowLeft, Search, Filter
+  FolderOpen, ArrowLeft, Search, Filter, CheckCircle, Download
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -18,6 +18,9 @@ interface VideoSession {
   session_name: string;
   original_filename: string;
   video_duration: number;
+  rendered_video_url?: string;
+  rendered_at?: string;
+  render_service?: string;
   original_duration?: number;
   current_step: number;
   created_at: string;
@@ -195,6 +198,13 @@ export default function SessionsPage() {
                         <p className="text-sm text-gray-600 truncate">
                           {session.original_filename}
                         </p>
+                        {/* Show if rendered video exists */}
+                        {session.rendered_video_url && (
+                          <div className="flex items-center gap-1 mt-1">
+                            <CheckCircle className="w-3 h-3 text-green-600" />
+                            <span className="text-xs text-green-600 font-medium">Rendered Video Available</span>
+                          </div>
+                        )}
                       </div>
                       <Button
                         onClick={(e) => {
@@ -247,13 +257,39 @@ export default function SessionsPage() {
                       </div>
                     </div>
 
-                    {/* Action */}
-                    <Link href={`/session/${session.id}`} className="block">
-                      <Button className="w-full bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700">
-                        <Play className="w-4 h-4 mr-2" />
-                        Resume Session
-                      </Button>
-                    </Link>
+                    {/* Actions */}
+                    <div className="space-y-2">
+                      <Link href={`/session/${session.id}`} className="block">
+                        <Button className="w-full bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700">
+                          <Play className="w-4 h-4 mr-2" />
+                          Resume Session
+                        </Button>
+                      </Link>
+                      
+                      {/* Show download button if rendered video exists */}
+                      {session.rendered_video_url && (
+                        <Button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Open in new tab
+                            window.open(session.rendered_video_url, '_blank');
+                            // Also trigger download
+                            const link = document.createElement('a');
+                            link.href = session.rendered_video_url!;
+                            link.download = `${session.session_name}_rendered.mp4`;
+                            link.target = '_blank';
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                          }}
+                          variant="outline"
+                          className="w-full flex items-center justify-center gap-2 text-green-600 hover:text-green-700 hover:bg-green-50 border-green-300"
+                        >
+                          <Download className="w-4 h-4" />
+                          Download Rendered Video
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </Card>
               ))}

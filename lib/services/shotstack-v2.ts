@@ -39,7 +39,10 @@ export interface ShotstackTimeline {
 
 export interface ShotstackOutput {
   format: 'mp4' | 'webm' | 'mov';
-  resolution: 'preview' | 'mobile' | 'sd' | 'hd' | '1080';
+  resolution: 'preview' | 'mobile' | 'sd' | 'hd' | '1080' | '4k';
+  fps?: number;  // Frame rate: 23.976, 24, 25, 29.97, 30, 50, 59.94, 60
+  quality?: 'low' | 'medium' | 'high';  // Encoding quality
+  aspectRatio?: '16:9' | '9:16' | '1:1' | '4:5' | '4:3';
 }
 
 export interface ShotstackEdit {
@@ -128,6 +131,25 @@ export function buildShotstackTimeline(
   };
 }
 
+/**
+ * Validate and normalize FPS to Shotstack supported values
+ */
+function normalizeFPS(fps: number): number {
+  // Shotstack supports: 23.976, 24, 25, 29.97, 30, 50, 59.94, 60
+  const supportedFPS = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60];
+  
+  // Find closest supported FPS
+  const closest = supportedFPS.reduce((prev, curr) => {
+    return Math.abs(curr - fps) < Math.abs(prev - fps) ? curr : prev;
+  });
+  
+  if (Math.abs(closest - fps) > 0.1) {
+    console.warn(`FPS ${fps} is not directly supported. Using closest: ${closest}`);
+  }
+  
+  return closest;
+}
+
 function parseTimeToSeconds(timeStr: string): number {
   if (!timeStr) return 0;
   
@@ -156,19 +178,39 @@ export async function submitShotstackRender(
   segmentsToRemove: EnhancedSegment[],
   videoDuration: number,
   apiKey: string,
-  environment: string = 'stage'
+  environment: string = 'stage',
+  outputOptions?: {
+    fps?: number;
+    quality?: 'low' | 'medium' | 'high';
+    resolution?: 'preview' | 'mobile' | 'sd' | 'hd' | '1080' | '4k';
+  }
 ): Promise<any> {
   const timeline = buildShotstackTimeline(videoUrl, segmentsToRemove, videoDuration);
   
-  const edit: ShotstackEdit = {
-    timeline,
-    output: {
-      format: 'mp4',
-      resolution: '1080'
-    }
+  // Build output configuration with user preferences
+  // Normalize FPS to supported values
+  const normalizedFPS = outputOptions?.fps ? normalizeFPS(outputOptions.fps) : 30;
+  
+  const output: ShotstackOutput = {
+    format: 'mp4',
+    resolution: outputOptions?.resolution || '1080',
+    fps: normalizedFPS,  // Use normalized FPS
+    quality: outputOptions?.quality || 'high'  // Default to high quality
   };
 
-  console.log('Submitting to Shotstack with edit:', JSON.stringify(edit, null, 2));
+  const edit: ShotstackEdit = {
+    timeline,
+    output
+  };
+
+  // Log detailed settings for verification
+  console.log('=== SHOTSTACK RENDER SETTINGS ===');
+  console.log(`FPS: ${output.fps} (normalized from ${outputOptions?.fps || 30})`);
+  console.log(`Quality: ${output.quality} (user selected)`);
+  console.log(`Resolution: ${output.resolution} (user selected)`);
+  console.log(`Format: ${output.format}`);
+  console.log('Full edit object:', JSON.stringify(edit, null, 2));
+  console.log('=================================');
 
   const response = await fetch(`${SHOTSTACK_API_URL}/${environment}/render`, {
     method: 'POST',
@@ -181,10 +223,18 @@ export async function submitShotstackRender(
 
   if (!response.ok) {
     const error = await response.text();
+    console.error('Shotstack API rejected request:', error);
     throw new Error(`Shotstack API error: ${error}`);
   }
 
-  return response.json();
+  const result = await response.json();
+  console.log('Shotstack API accepted render with settings:', {
+    renderId: result.response?.id,
+    fps: output.fps,
+    quality: output.quality,
+    resolution: output.resolution
+  });
+  return result;
 }
 
 /**

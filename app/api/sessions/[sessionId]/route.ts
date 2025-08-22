@@ -57,6 +57,72 @@ export async function GET(
   }
 }
 
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { sessionId: string } }
+) {
+  try {
+    const supabase = await createClient();
+    
+    // Check authentication
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { sessionId } = params;
+    const body = await request.json();
+
+    if (!sessionId) {
+      return NextResponse.json({ error: 'Session ID is required' }, { status: 400 });
+    }
+
+    // Extract fields to update for rendered video
+    const updateData: any = {};
+    
+    // Handle rendered video update
+    if (body.rendered_video_url !== undefined) {
+      updateData.rendered_video_url = body.rendered_video_url;
+    }
+    if (body.rendered_at !== undefined) {
+      updateData.rendered_at = body.rendered_at;
+    }
+    if (body.render_service !== undefined) {
+      updateData.render_service = body.render_service;
+    }
+    if (body.render_settings !== undefined) {
+      updateData.render_settings = body.render_settings;
+    }
+
+    // Update the session with rendered video info
+    const { data: updatedSession, error } = await supabase
+      .from('video_sessions')
+      .update(updateData)
+      .eq('id', sessionId)
+      .eq('user_id', user.id) // Ensure user can only update their own sessions
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Database error:', error);
+      if (error.code === 'PGRST116') {
+        return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+      }
+      return NextResponse.json({ error: 'Failed to update session' }, { status: 500 });
+    }
+
+    return NextResponse.json({ 
+      success: true,
+      message: 'Rendered video saved to session',
+      session: updatedSession
+    });
+
+  } catch (error) {
+    console.error('Error updating session with rendered video:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: { sessionId: string } }

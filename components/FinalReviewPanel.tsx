@@ -4,12 +4,14 @@ import { EnhancedSegment } from '@/lib/types/segments';
 import { TakeCluster, ClusterSelection } from '@/lib/clustering';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Download, FileText, Film, FileCode, Video, Loader2, CheckCircle, AlertCircle, Upload } from 'lucide-react';
-import { useState } from 'react';
+import { Download, FileText, Film, FileCode, Video, Loader2, CheckCircle, AlertCircle, Upload, Info, Save } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useState, useEffect } from 'react';
 import { getVideoFileForUpload, uploadVideoToSupabase } from '@/lib/video-upload';
 import { EditedVideoPreview } from './EditedVideoPreview';
 
 interface FinalReviewPanelProps {
+  sessionId?: string;  // Optional session ID if this is part of a saved session
   finalSegmentsToRemove: EnhancedSegment[];
   clusters: TakeCluster[];
   clusterSelections: ClusterSelection[];
@@ -23,6 +25,7 @@ interface FinalReviewPanelProps {
 }
 
 export function FinalReviewPanel({
+  sessionId,
   finalSegmentsToRemove,
   clusters,
   clusterSelections,
@@ -41,11 +44,125 @@ export function FinalReviewPanel({
   const [renderId, setRenderId] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [renderService, setRenderService] = useState<'shotstack' | 'chillin'>('shotstack'); // Default to Shotstack
+  const [renderFPS, setRenderFPS] = useState<number>(30); // Default FPS
+  const [renderQuality, setRenderQuality] = useState<'low' | 'medium' | 'high'>('high'); // Default quality
+  const [renderResolution, setRenderResolution] = useState<'sd' | 'hd' | '1080' | '4k'>('1080'); // Default resolution
+  const [detectedFPS, setDetectedFPS] = useState<number | null>(null); // Detected source FPS
+  const [isSavingToSession, setIsSavingToSession] = useState(false);
+  const [sessionSaved, setSessionSaved] = useState(false);
   const timeRemoved = originalDuration - finalDuration;
   const reductionPercentage = ((timeRemoved / originalDuration) * 100).toFixed(1);
   
   const clustersProcessed = clusterSelections.length;
   const segmentsRemoved = finalSegmentsToRemove.length;
+
+  // Try to detect source video FPS
+  useEffect(() => {
+    if (videoRef.current && videoUrl) {
+      const detectFPS = () => {
+        const video = videoRef.current;
+        if (video) {
+          // Try to get FPS from video metadata (not always available)
+          // Some browsers expose this through videoTracks
+          const videoTracks = (video as any).videoTracks;
+          if (videoTracks && videoTracks.length > 0) {
+            const track = videoTracks[0];
+            if (track.frameRate) {
+              const fps = Math.round(track.frameRate);
+              setDetectedFPS(fps);
+              setRenderFPS(fps); // Auto-select detected FPS
+              console.log('Detected source FPS:', fps);
+            }
+          }
+          
+          // Alternative: Use MediaSource API if available
+          if (!detectedFPS && (video as any).captureStream) {
+            try {
+              const stream = (video as any).captureStream();
+              const videoTrack = stream.getVideoTracks()[0];
+              if (videoTrack) {
+                const settings = videoTrack.getSettings();
+                if (settings.frameRate) {
+                  const fps = Math.round(settings.frameRate);
+                  setDetectedFPS(fps);
+                  setRenderFPS(fps); // Auto-select detected FPS
+                  console.log('Detected source FPS from stream:', fps);
+                }
+              }
+            } catch (e) {
+              console.log('Could not detect FPS from stream:', e);
+            }
+          }
+        }
+      };
+
+      // Try detection when video metadata loads
+      if (videoRef.current.readyState >= 2) {
+        detectFPS();
+      } else {
+        videoRef.current.addEventListener('loadedmetadata', detectFPS);
+        return () => {
+          if (videoRef.current) {
+            videoRef.current.removeEventListener('loadedmetadata', detectFPS);
+          }
+        };
+      }
+    }
+  }, [videoRef, videoUrl]);
+
+  // Save rendered video URL to session
+  const saveRenderedVideoToSession = async (renderedUrl: string) => {
+    if (!sessionId) {
+      console.log('No session ID, skipping save to session');
+      return;
+    }
+
+    setIsSavingToSession(true);
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          rendered_video_url: renderedUrl,
+          rendered_at: new Date().toISOString(),
+          render_service: renderService,
+          render_settings: {
+            fps: renderFPS,
+            quality: renderQuality,
+            resolution: renderResolution
+          }
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save rendered video to session');
+      }
+
+      const result = await response.json();
+      console.log('Rendered video saved to session:', result);
+      setSessionSaved(true);
+      
+      // Show success message
+      const successMsg = document.createElement('div');
+      successMsg.className = 'fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+      successMsg.textContent = '✅ Rendered video saved to project!';
+      document.body.appendChild(successMsg);
+      setTimeout(() => successMsg.remove(), 3000);
+      
+    } catch (error) {
+      console.error('Error saving rendered video to session:', error);
+      // Show error message
+      const errorMsg = document.createElement('div');
+      errorMsg.className = 'fixed bottom-4 right-4 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+      errorMsg.textContent = '❌ Failed to save to project';
+      document.body.appendChild(errorMsg);
+      setTimeout(() => errorMsg.remove(), 3000);
+    } finally {
+      setIsSavingToSession(false);
+    }
+  };
 
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -129,8 +246,9 @@ export function FinalReviewPanel({
           videoDuration: videoDuration || originalDuration,
           videoWidth: 1920,
           videoHeight: 1080,
-          fps: 30,
-          quality: 'high' // For Shotstack
+          fps: renderFPS,  // Use user-selected FPS
+          quality: renderQuality,  // Use user-selected quality
+          resolution: renderResolution  // Use user-selected resolution
         })
       });
       
@@ -204,6 +322,9 @@ export function FinalReviewPanel({
             setRenderStatus('completed');
             setRenderProgress(100);
             setRenderedVideoUrl(statusResult.outputUrl);
+            
+            // Save to session/project
+            await saveRenderedVideoToSession(statusResult.outputUrl);
             
             // Open the video in a new tab
             window.open(statusResult.outputUrl, '_blank');
@@ -384,6 +505,159 @@ export function FinalReviewPanel({
                     </div>
                   </div>
                   
+                  {/* Render Settings - Only show for Shotstack */}
+                  {renderService === 'shotstack' && (
+                    <div className="space-y-3 mb-3">
+                      {/* FPS Selection */}
+                      <div className="p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                        <div className="flex items-center gap-1 mb-1">
+                          <label className="text-sm font-medium">Frame Rate (FPS):</label>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Info className="w-3 h-3 text-gray-400" />
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                <p className="text-xs">
+                                  <strong>24 fps:</strong> Cinema standard<br/>
+                                  <strong>25 fps:</strong> PAL TV standard (Europe)<br/>
+                                  <strong>30 fps:</strong> NTSC TV standard (USA)<br/>
+                                  <strong>50 fps:</strong> PAL high frame rate<br/>
+                                  <strong>60 fps:</strong> Smooth motion video<br/>
+                                  <br/>
+                                  ⚠️ Always match your source video FPS to avoid choppy playback!
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
+                        <div className="grid grid-cols-5 gap-1">
+                          {[24, 25, 30, 50, 60].map((fps) => (
+                            <button
+                              key={fps}
+                              className={`px-2 py-1 text-xs rounded transition-colors ${
+                                renderFPS === fps
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                              }`}
+                              onClick={() => setRenderFPS(fps)}
+                            >
+                              {fps}{detectedFPS === fps ? '*' : ''}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {detectedFPS 
+                            ? `Source video detected at ${detectedFPS} fps - matching recommended`
+                            : 'Match your source video FPS for smooth playback'}
+                        </p>
+                      </div>
+
+                      {/* Quality Selection */}
+                      <div className="p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                        <div className="flex items-center gap-1 mb-1">
+                          <label className="text-sm font-medium">Quality:</label>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Info className="w-3 h-3 text-gray-400" />
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                <p className="text-xs">
+                                  <strong>Low:</strong> Smaller file, faster render, lower quality<br/>
+                                  <strong>Medium:</strong> Balanced file size and quality<br/>
+                                  <strong>High:</strong> Best quality, larger file, slower render<br/>
+                                  <br/>
+                                  Use High for final exports, Low for quick previews.
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1">
+                          {(['low', 'medium', 'high'] as const).map((quality) => (
+                            <button
+                              key={quality}
+                              className={`px-2 py-1 text-xs rounded transition-colors capitalize ${
+                                renderQuality === quality
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                              }`}
+                              onClick={() => setRenderQuality(quality)}
+                            >
+                              {quality === 'low' ? 'Low (Fast)' : quality === 'medium' ? 'Medium' : 'High (Best)'}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Higher quality = larger file size
+                        </p>
+                      </div>
+
+                      {/* Resolution Selection */}
+                      <div className="p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                        <label className="text-sm font-medium mb-1 block">Resolution:</label>
+                        <div className="grid grid-cols-4 gap-1">
+                          {(['sd', 'hd', '1080', '4k'] as const).map((res) => (
+                            <button
+                              key={res}
+                              className={`px-2 py-1 text-xs rounded transition-colors ${
+                                renderResolution === res
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                              }`}
+                              onClick={() => setRenderResolution(res)}
+                            >
+                              {res === 'sd' ? '480p' : res === 'hd' ? '720p' : res === '1080' ? '1080p' : '4K'}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Higher resolution = better quality but longer render time
+                        </p>
+                      </div>
+
+                      {/* Render Settings Summary */}
+                      <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
+                        <div className="flex items-center gap-2 mb-1">
+                          <CheckCircle className="w-3 h-3 text-green-600" />
+                          <span className="text-xs font-medium text-blue-900 dark:text-blue-200">Render Settings Configured</span>
+                        </div>
+                        <div className="text-xs text-blue-700 dark:text-blue-300">
+                          <div className="flex items-center gap-2">
+                            <span>📹 Output:</span>
+                            <span className="font-mono font-bold bg-white dark:bg-gray-800 px-1 rounded">
+                              {renderResolution === 'sd' ? '480p' : renderResolution === 'hd' ? '720p' : renderResolution === '1080' ? '1080p' : '4K'}
+                            </span>
+                            <span>@</span>
+                            <span className="font-mono font-bold bg-white dark:bg-gray-800 px-1 rounded">
+                              {renderFPS}fps
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span>🎯 Quality:</span>
+                            <span className="font-mono font-bold bg-white dark:bg-gray-800 px-1 rounded capitalize">
+                              {renderQuality}
+                            </span>
+                            {renderQuality === 'high' && <span className="text-green-600">✓ Best</span>}
+                          </div>
+                          {detectedFPS && renderFPS !== detectedFPS && (
+                            <div className="text-yellow-600 dark:text-yellow-400 mt-2 p-1 bg-yellow-50 dark:bg-yellow-900/20 rounded">
+                              ⚠️ FPS mismatch: Source is {detectedFPS}fps, rendering at {renderFPS}fps
+                              <br/>
+                              <span className="text-xs">This may cause choppy playback. Consider matching source FPS.</span>
+                            </div>
+                          )}
+                          {detectedFPS && renderFPS === detectedFPS && (
+                            <div className="text-green-600 dark:text-green-400 mt-2">
+                              ✅ FPS matches source video - optimal playback quality
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
                   <Button
                     className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white"
                     onClick={handleRenderVideo}
@@ -437,6 +711,63 @@ export function FinalReviewPanel({
                           className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full transition-all"
                           style={{ width: `${renderStatus === 'uploading' ? uploadProgress : renderProgress}%` }}
                         />
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Save to Project Status - Show after render completes */}
+                  {renderStatus === 'completed' && renderedVideoUrl && sessionId && (
+                    <div className="mt-3 p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
+                      <div className="flex items-center gap-2">
+                        {sessionSaved ? (
+                          <>
+                            <CheckCircle className="w-4 h-4 text-green-600" />
+                            <div className="flex-1">
+                              <div className="text-xs font-medium text-green-900 dark:text-green-200">
+                                ✅ Saved to Project
+                              </div>
+                              <div className="text-xs text-green-700 dark:text-green-300">
+                                Video URL stored in session
+                              </div>
+                            </div>
+                          </>
+                        ) : isSavingToSession ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                            <span className="text-xs text-blue-600 dark:text-blue-400">
+                              Saving to project...
+                            </span>
+                          </>
+                        ) : (
+                          <div className="flex items-center justify-between w-full">
+                            <div className="flex items-center gap-2">
+                              <Save className="w-4 h-4 text-amber-600" />
+                              <span className="text-xs text-amber-700 dark:text-amber-400">
+                                Not saved yet
+                              </span>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => saveRenderedVideoToSession(renderedVideoUrl)}
+                              className="text-xs h-6 px-2"
+                            >
+                              Save
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Show message if no session ID */}
+                  {renderStatus === 'completed' && renderedVideoUrl && !sessionId && (
+                    <div className="mt-3 p-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-800">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-amber-600" />
+                        <div className="text-xs text-amber-700 dark:text-amber-300">
+                          Save your workflow as a session to store rendered videos
+                        </div>
                       </div>
                     </div>
                   )}

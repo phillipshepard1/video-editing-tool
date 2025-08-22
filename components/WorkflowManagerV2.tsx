@@ -51,6 +51,7 @@ export function WorkflowManagerV2({
   const [isSaving, setIsSaving] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [sessionName, setSessionName] = useState('');
+  const [savedSessionId, setSavedSessionId] = useState<string | null>(null);
   
   // Groups View state
   const [showGroupsView, setShowGroupsView] = useState(false);
@@ -229,6 +230,7 @@ export function WorkflowManagerV2({
       const data = await response.json();
 
       if (response.ok) {
+        setSavedSessionId(data.sessionId); // Store the session ID
         toast.success('Session saved successfully!');
         setShowSaveDialog(false);
         setSessionName('');
@@ -458,6 +460,7 @@ export function WorkflowManagerV2({
 
           {currentStep === 3 && (
             <FinalReviewPanel
+              sessionId={savedSessionId}
               finalSegmentsToRemove={finalSegmentsToRemove}
               clusters={clusters}
               clusterSelections={clusterSelections}

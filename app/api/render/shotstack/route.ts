@@ -19,7 +19,9 @@ export async function POST(request: NextRequest) {
       videoDuration,
       videoWidth,
       videoHeight,
-      quality 
+      quality,
+      fps,  // Frame rate from client
+      resolution  // Resolution from client
     } = body;
 
     // Validate required fields
@@ -49,16 +51,23 @@ export async function POST(request: NextRequest) {
       segments: segmentsToRemove.length,
       duration: videoDuration,
       dimensions: `${videoWidth || 1920}x${videoHeight || 1080}`,
-      quality: quality || 'high'
+      quality: quality || 'high',
+      fps: fps || 30,
+      resolution: resolution || '1080'
     });
 
-    // Submit the render job using v2 implementation
+    // Submit the render job using v2 implementation with output options
     const renderResponse = await submitShotstackRender(
       videoUrl,
       segmentsToRemove as EnhancedSegment[],
       videoDuration,
       apiKey,
-      process.env.SHOTSTACK_ENV || 'v1'
+      process.env.SHOTSTACK_ENV || 'v1',
+      {
+        fps: fps || 30,  // Use client-specified FPS or default to 30
+        quality: quality || 'high',
+        resolution: resolution || '1080'
+      }
     );
 
     if (!renderResponse.success || !renderResponse.response?.id) {
