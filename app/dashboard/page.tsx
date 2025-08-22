@@ -480,6 +480,7 @@ export default function DashboardPage() {
                   videoUrl={videoUrlToUse}
                   videoDuration={originalDurationValue}
                   originalDuration={originalDurationValue}
+                  originalFilename={currentJob.metadata?.originalFileName || 'video.mp4'}
                   videoRef={videoRef}
                   onSegmentSelect={setSelectedSegment}
                   onExport={(format, segmentsToRemove) => {
@@ -507,7 +508,7 @@ export default function DashboardPage() {
               );
             })()}
           </div>
-        </main>
+        </main>                                         
       </AuthenticatedLayout>
     );
   }
@@ -521,6 +522,7 @@ export default function DashboardPage() {
               segments={analysis.segmentsToRemove}
               videoUrl={videoUrl}
               videoDuration={videoDuration}
+              originalFilename={file?.name || 'video.mp4'}
               supabaseUrl={analysis.supabaseUrl}
               onExport={(format, segmentsToRemove) => {
                 if (format === 'edl') {
@@ -538,7 +540,6 @@ export default function DashboardPage() {
               originalDuration={analysis.summary.originalDuration}
               videoRef={videoRef}
               onSegmentSelect={setSelectedSegment}
-              originalFilename={file?.name}
               enhancedAnalysis={enhancedAnalysis}
             />
           </div>
