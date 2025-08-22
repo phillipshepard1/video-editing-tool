@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { 
   submitShotstackRender, 
   checkShotstackRender
-} from '@/lib/services/shotstack-v2';
+} from '@/lib/services/shotstack-v3';  // Use V3 with fixes
 import { checkShotstackHealth } from '@/lib/services/shotstack';
 import { EnhancedSegment } from '@/lib/types/segments';
 
@@ -46,14 +46,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // IMPORTANT: Ensure FPS matches source to prevent freezing
+    const sourceFPS = fps || 30;
     console.log('Processing Shotstack render request:', {
       videoUrl,
       segments: segmentsToRemove.length,
       duration: videoDuration,
       dimensions: `${videoWidth || 1920}x${videoHeight || 1080}`,
       quality: quality || 'high',
-      fps: fps || 30,
-      resolution: resolution || '1080'
+      fps: sourceFPS,
+      resolution: resolution || '1080',
+      warning: sourceFPS !== fps ? `FPS mismatch detected! Source: ${fps}, Using: ${sourceFPS}` : null
     });
 
     // Submit the render job using v2 implementation with output options

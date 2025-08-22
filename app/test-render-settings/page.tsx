@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function TestRenderSettings() {
-  const [renderFPS, setRenderFPS] = useState<number>(30);
+  const [renderFPS, setRenderFPS] = useState<number>(60); // Default to 60 FPS
   const [renderQuality, setRenderQuality] = useState<'low' | 'medium' | 'high'>('high');
   const [renderResolution, setRenderResolution] = useState<'sd' | 'hd' | '1080' | '4k'>('1080');
   const [testResult, setTestResult] = useState<string>('');

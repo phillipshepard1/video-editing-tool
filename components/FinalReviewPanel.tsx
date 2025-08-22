@@ -44,7 +44,7 @@ export function FinalReviewPanel({
   const [renderId, setRenderId] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [renderService, setRenderService] = useState<'shotstack' | 'chillin'>('shotstack'); // Default to Shotstack
-  const [renderFPS, setRenderFPS] = useState<number>(30); // Default FPS
+  const [renderFPS, setRenderFPS] = useState<number>(60); // Default to 60 FPS to prevent freezing issues
   const [renderQuality, setRenderQuality] = useState<'low' | 'medium' | 'high'>('high'); // Default quality
   const [renderResolution, setRenderResolution] = useState<'sd' | 'hd' | '1080' | '4k'>('1080'); // Default resolution
   const [detectedFPS, setDetectedFPS] = useState<number | null>(null); // Detected source FPS
@@ -70,7 +70,10 @@ export function FinalReviewPanel({
             if (track.frameRate) {
               const fps = Math.round(track.frameRate);
               setDetectedFPS(fps);
-              setRenderFPS(fps); // Auto-select detected FPS
+              // Only override if detected FPS is different and valid
+              if (fps && fps !== 60) {
+                setRenderFPS(fps); // Auto-select detected FPS
+              }
               console.log('Detected source FPS:', fps);
             }
           }
@@ -85,7 +88,10 @@ export function FinalReviewPanel({
                 if (settings.frameRate) {
                   const fps = Math.round(settings.frameRate);
                   setDetectedFPS(fps);
-                  setRenderFPS(fps); // Auto-select detected FPS
+                  // Only override if detected FPS is different and valid
+                  if (fps && fps !== 60) {
+                    setRenderFPS(fps); // Auto-select detected FPS
+                  }
                   console.log('Detected source FPS from stream:', fps);
                 }
               }
@@ -512,6 +518,7 @@ export function FinalReviewPanel({
                       <div className="p-2 bg-gray-50 dark:bg-gray-800 rounded">
                         <div className="flex items-center gap-1 mb-1">
                           <label className="text-sm font-medium">Frame Rate (FPS):</label>
+                          <span className="text-xs text-blue-600 font-medium">(60 default)</span>
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger>
@@ -523,7 +530,7 @@ export function FinalReviewPanel({
                                   <strong>25 fps:</strong> PAL TV standard (Europe)<br/>
                                   <strong>30 fps:</strong> NTSC TV standard (USA)<br/>
                                   <strong>50 fps:</strong> PAL high frame rate<br/>
-                                  <strong>60 fps:</strong> Smooth motion video<br/>
+                                  <strong>60 fps:</strong> Smooth motion video (Recommended default)<br/>
                                   <br/>
                                   ⚠️ Always match your source video FPS to avoid choppy playback!
                                 </p>
@@ -535,21 +542,26 @@ export function FinalReviewPanel({
                           {[24, 25, 30, 50, 60].map((fps) => (
                             <button
                               key={fps}
-                              className={`px-2 py-1 text-xs rounded transition-colors ${
+                              className={`px-2 py-1 text-xs rounded transition-colors relative ${
                                 renderFPS === fps
                                   ? 'bg-blue-600 text-white'
+                                  : fps === 60
+                                  ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800 ring-1 ring-blue-300 dark:ring-blue-700'
                                   : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
                               }`}
                               onClick={() => setRenderFPS(fps)}
                             >
                               {fps}{detectedFPS === fps ? '*' : ''}
+                              {fps === 60 && renderFPS !== 60 && (
+                                <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                              )}
                             </button>
                           ))}
                         </div>
                         <p className="text-xs text-gray-500 mt-1">
                           {detectedFPS 
-                            ? `Source video detected at ${detectedFPS} fps - matching recommended`
-                            : 'Match your source video FPS for smooth playback'}
+                            ? `Source video detected at ${detectedFPS} fps${detectedFPS === renderFPS ? ' - matched!' : ''}`
+                            : '60 FPS default prevents freezing issues. Adjust if needed.'}
                         </p>
                       </div>
 
