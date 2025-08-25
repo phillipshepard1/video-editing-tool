@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { EnhancedSegment, FilterState, createDefaultFilterState } from '@/lib/types/segments';
 import { TakeCluster, ClusterSelection, detectClusters, findOverlappingSegments, resolveSegmentOverlaps } from '@/lib/clustering';
 import { ContentGroup, TakeSelection, EnhancedAnalysisResult } from '@/lib/types/takes';
@@ -8,10 +8,11 @@ import { ClusterPanel } from './ClusterPanel';
 import { EnhancedFilterPanel } from './EnhancedFilterPanel';
 import { FinalReviewPanel } from './FinalReviewPanel';
 import { ContentGroupsPanel } from './ContentGroupsPanel';
+import { ClusterTimeline } from './timeline/ClusterTimeline';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
-import { ChevronRight, Save, BookmarkPlus, GitCompare, Users } from 'lucide-react';
+import { ChevronRight, Save, BookmarkPlus, GitCompare, Users, Film } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface WorkflowManagerProps {
@@ -55,6 +56,7 @@ export function WorkflowManagerV2({
   
   // Groups View state
   const [showGroupsView, setShowGroupsView] = useState(false);
+  const [showTimelineView, setShowTimelineView] = useState(false);
   const [takeSelections, setTakeSelections] = useState<TakeSelection[]>([]);
   const [contentGroups, setContentGroups] = useState<ContentGroup[]>([]);
 
@@ -186,6 +188,60 @@ export function WorkflowManagerV2({
     });
   };
 
+  // Handle cluster timeline decisions
+  const handleClusterDecision = (clusterId: string, takeId: string, decision: 'approve' | 'reject') => {
+    const selection: TakeSelection = {
+      groupId: clusterId,
+      selectedTakeId: takeId,
+      isUserOverride: true,
+      reason: decision === 'approve' ? 'User approved' : 'User rejected'
+    };
+    handleTakeSelection(selection);
+  };
+
+  // Handle progress to silence timeline (placeholder for now)
+  const handleProgressToSilence = () => {
+    console.log('Progress to silence timeline requested');
+    // For now, just show a message - we'll implement this in phase 2
+    toast.success('Silence timeline coming in next phase!');
+  };
+
+  // Convert traditional clusters to content groups for timeline compatibility
+  const getTimelineCompatibleGroups = useMemo(() => {
+    if (contentGroups.length > 0) {
+      return contentGroups; // Use enhanced groups if available
+    }
+    
+    // Convert traditional clusters to content groups format
+    return clusters.map((cluster, index) => ({
+      id: cluster.id,
+      name: `Cluster ${index + 1}`,
+      description: cluster.title || `${cluster.attempts.length} segments found`,
+      contentType: 'general' as const,
+      timeRange: {
+        start: cluster.timeRange.start,
+        end: cluster.timeRange.end
+      },
+      averageQuality: 7, // Default quality
+      confidence: 0.8,
+      bestTakeId: cluster.attempts[0]?.id || '', // First segment as default
+      reasoning: 'Converted from traditional cluster analysis',
+      takes: cluster.attempts.map((attempt, attemptIndex) => ({
+        id: attempt.id,
+        startTime: attempt.startTime.toString(),
+        endTime: attempt.endTime.toString(),
+        duration: attempt.duration,
+        qualityScore: attemptIndex === 0 ? 8 : 6, // First take gets higher score
+        confidence: 0.8,
+        transcript: attempt.reason || 'No transcript available',
+        issues: [],
+        qualities: [
+          { type: 'clear_delivery' as const, description: 'Segment from analysis' }
+        ]
+      }))
+    }));
+  }, [contentGroups, clusters]);
+
   const timeRemoved = finalSegmentsToRemove.reduce((sum, s) => sum + s.duration, 0);
   const finalDuration = originalDuration - timeRemoved;
 
@@ -256,19 +312,43 @@ export function WorkflowManagerV2({
               <span className="text-sm text-gray-500">• {originalFilename}</span>
             )}
           </div>
-          <Button
-            onClick={() => setShowSaveDialog(true)}
-            className="flex items-center gap-2 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white"
-            disabled={isSaving}
-          >
-            <BookmarkPlus className="w-4 h-4" />
-            {isSaving ? 'Saving...' : 'Save Session'}
-          </Button>
+          
+          <div className="flex items-center gap-3">
+            {/* New Feature Button - Timeline Mode */}
+            {(contentGroups.length > 0 || clusters.length > 0) && (
+              <Button
+                onClick={() => {
+                  setShowTimelineView(!showTimelineView);
+                  if (!showTimelineView) {
+                    setShowGroupsView(false); // Turn off groups view when enabling timeline
+                  }
+                }}
+                variant={showTimelineView ? "default" : "outline"}
+                className={`flex items-center gap-2 ${
+                  showTimelineView 
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                    : 'border-blue-600 text-blue-600 hover:bg-blue-50'
+                }`}
+              >
+                <Film className="w-4 h-4" />
+                {showTimelineView ? "Exit New Feature" : "🚀 New Feature"}
+              </Button>
+            )}
+            
+            <Button
+              onClick={() => setShowSaveDialog(true)}
+              className="flex items-center gap-2 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white"
+              disabled={isSaving}
+            >
+              <BookmarkPlus className="w-4 h-4" />
+              {isSaving ? 'Saving...' : 'Save Session'}
+            </Button>
+          </div>
         </div>
       </Card>
 
-      {/* View Mode Toggle */}
-      {contentGroups.length > 0 && (
+      {/* View Mode Toggle - Only show when not in timeline mode */}
+      {contentGroups.length > 0 && !showTimelineView && (
         <Card className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -284,7 +364,7 @@ export function WorkflowManagerV2({
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-gray-600" />
-                <span className="text-sm text-gray-700">Traditional View</span>
+                <span className="text-sm text-gray-700">Traditional</span>
               </div>
               <Switch
                 checked={showGroupsView}
@@ -293,7 +373,7 @@ export function WorkflowManagerV2({
               />
               <div className="flex items-center gap-2">
                 <GitCompare className="w-4 h-4 text-blue-600" />
-                <span className="text-sm text-gray-700">Groups View</span>
+                <span className="text-sm text-gray-700">Groups</span>
               </div>
             </div>
           </div>
@@ -301,7 +381,7 @@ export function WorkflowManagerV2({
       )}
 
       {/* Step Navigation - Matching Screenshot Style */}
-      {!showGroupsView && (
+      {!showGroupsView && !showTimelineView && (
         <div className="flex gap-2 mb-6">
           <Button
             onClick={() => setCurrentStep(1)}
@@ -330,7 +410,8 @@ export function WorkflowManagerV2({
       )}
 
       {/* Analysis Complete Header - Matching Screenshot */}
-      <Card className="bg-white border-gray-200 shadow-xl">
+      {!showTimelineView && (
+        <Card className="bg-white border-gray-200 shadow-xl">
         <div className="p-4">
           <div className="flex justify-between items-center mb-3">
             <h3 className="font-semibold text-gray-900">Analysis Complete</h3>
@@ -363,6 +444,7 @@ export function WorkflowManagerV2({
           </div>
         </div>
       </Card>
+      )}
 
       {/* Export Options - Always Visible */}
       {currentStep === 3 ? (
@@ -419,7 +501,16 @@ export function WorkflowManagerV2({
       )}
 
       {/* Step Content */}
-      {showGroupsView ? (
+      {showTimelineView ? (
+        <ClusterTimeline
+          contentGroups={getTimelineCompatibleGroups}
+          videoUrl={supabaseUrl || videoUrl}
+          videoDuration={videoDuration}
+          onClusterDecision={handleClusterDecision}
+          onProgressToSilence={handleProgressToSilence}
+          originalFilename={originalFilename}
+        />
+      ) : showGroupsView ? (
         <ContentGroupsPanel
           contentGroups={contentGroups}
           takeSelections={takeSelections}

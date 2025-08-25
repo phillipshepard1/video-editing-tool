@@ -53,7 +53,7 @@ export function ContentGroupsPanel({
     return sum + ((bestTake?.qualityScore || 0) - averageTakeQuality);
   }, 0) / (contentGroups.length || 1);
 
-  // Handle take playback
+  // Handle take playback with refined boundaries
   const handlePlayTake = (take: Take) => {
     if (!videoRef?.current) return;
     
@@ -67,16 +67,29 @@ export function ContentGroupsPanel({
       return parseFloat(timeStr);
     };
 
-    const startTime = parseTime(take.startTime);
+    // Use refined boundaries if available (speechStart), otherwise use segment boundaries
+    const refinedTake = take as any;
+    const startTimeStr = refinedTake.speechStart || refinedTake.refinedStartTime || take.startTime;
+    const endTimeStr = refinedTake.speechEnd || refinedTake.refinedEndTime || take.endTime;
+    
+    const startTime = parseTime(startTimeStr);
     videoRef.current.currentTime = startTime;
     videoRef.current.play();
     
-    // Notify parent about segment selection for timeline sync
+    // Notify parent about segment selection for timeline sync with refined boundaries
+    const segmentStartTime = refinedTake.speechStart || refinedTake.refinedStartTime || take.startTime;
+    const segmentEndTime = refinedTake.speechEnd || refinedTake.refinedEndTime || take.endTime;
+    
     onSegmentSelect({
       id: take.id,
-      startTime: take.startTime,
-      endTime: take.endTime,
-      duration: take.duration
+      startTime: segmentStartTime,
+      endTime: segmentEndTime,
+      duration: refinedTake.speechDuration || take.duration,
+      originalStartTime: take.startTime,
+      originalEndTime: take.endTime,
+      wasRefined: refinedTake.wasRefined || false,
+      leadingSilence: refinedTake.leadingSilence,
+      trailingSilence: refinedTake.trailingSilence
     });
   };
 

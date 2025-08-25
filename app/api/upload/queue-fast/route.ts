@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     const priority = (formData.get('priority') as any) || 'normal';
     
     // Parse processing options
-    let processingOptions = {};
+    let processingOptions: any = {};
     const processingOptionsStr = formData.get('processingOptions') as string;
     if (processingOptionsStr) {
       try {
@@ -100,6 +100,7 @@ export async function POST(request: NextRequest) {
           fileSize: file.size,
           fileType: file.type,
           uploadedAt: new Date().toISOString(),
+          thumbnail: processingOptions.thumbnail || null, // Store thumbnail from processing options
         },
       });
       
@@ -146,12 +147,13 @@ export async function POST(request: NextRequest) {
       .from('videos')
       .getPublicUrl(videoPath);
 
-    // Update job with video URL
+    // Update job with video URL and preserve thumbnail
     await jobQueue.updateJob(job.id, {
       metadata: {
         ...job.metadata,
         videoPath,
-        videoUrl: publicUrl
+        videoUrl: publicUrl,
+        thumbnail: job.metadata?.thumbnail || null // Preserve thumbnail
       }
     });
 

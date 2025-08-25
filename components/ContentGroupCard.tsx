@@ -15,7 +15,9 @@ import {
   X, 
   CheckCircle,
   AlertTriangle,
-  Clock
+  Clock,
+  Volume2,
+  Scissors
 } from 'lucide-react';
 
 interface ContentGroupCardProps {
@@ -265,6 +267,12 @@ function TakeRow({
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  // Check if take has been refined
+  const refinedTake = take as any;
+  const hasRefinedBoundaries = refinedTake.wasRefined || refinedTake.speechStart || refinedTake.leadingSilence !== undefined;
+  const leadingSilence = refinedTake.leadingSilence || 0;
+  const trailingSilence = refinedTake.trailingSilence || 0;
+  
   return (
     <div className={`p-3 rounded-lg border ${
       isSelected 
@@ -276,8 +284,20 @@ function TakeRow({
           {/* Time and Quality */}
           <div className="flex items-center gap-3 mb-2">
             <span className="text-xs text-gray-600 font-mono">
-              {formatTime(take.startTime)} - {formatTime(take.endTime)}
+              {formatTime(refinedTake.speechStart || take.startTime)} - {formatTime(refinedTake.speechEnd || take.endTime)}
             </span>
+            
+            {/* Silence trimming indicators */}
+            {hasRefinedBoundaries && (leadingSilence > 0.5 || trailingSilence > 0.5) && (
+              <div className="flex items-center gap-1">
+                <Scissors className="w-3 h-3 text-purple-600" />
+                <span className="text-xs text-purple-600 font-medium">
+                  {leadingSilence > 0.5 && `${leadingSilence.toFixed(1)}s`}
+                  {leadingSilence > 0.5 && trailingSilence > 0.5 && ' / '}
+                  {trailingSilence > 0.5 && `${trailingSilence.toFixed(1)}s`}
+                </span>
+              </div>
+            )}
             <QualityMeter 
               score={take.qualityScore} 
               size="sm"
@@ -296,6 +316,18 @@ function TakeRow({
             </p>
           )}
 
+          {/* Silence Detection Info */}
+          {hasRefinedBoundaries && (leadingSilence > 1 || trailingSilence > 1) && (
+            <div className="bg-purple-50 px-2 py-1 rounded text-xs text-purple-700 mb-2 flex items-center gap-1">
+              <Volume2 className="w-3 h-3" />
+              <span>
+                Silence trimmed: 
+                {leadingSilence > 1 && ` ${leadingSilence.toFixed(1)}s at start`}
+                {trailingSilence > 1 && ` ${trailingSilence.toFixed(1)}s at end`}
+              </span>
+            </div>
+          )}
+          
           {/* Issues and Qualities */}
           <div className="flex flex-wrap gap-1">
             {take.issues.slice(0, 2).map((issue, index) => (
