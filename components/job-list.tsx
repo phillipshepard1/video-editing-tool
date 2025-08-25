@@ -154,7 +154,27 @@ export function JobList({ onJobSelect, onJobDelete }: JobListProps) {
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3 flex-1">
-              <FileVideo className="w-5 h-5 text-gray-400" />
+              {/* Video Thumbnail */}
+              <div className="w-20 h-12 bg-gray-100 rounded-md flex items-center justify-center overflow-hidden flex-shrink-0">
+                {job.metadata?.thumbnail || job.metadata?.videoUrl ? (
+                  <video 
+                    className="w-full h-full object-cover"
+                    src={job.metadata?.thumbnail || job.metadata?.videoUrl}
+                    muted
+                    playsInline
+                    onMouseEnter={(e) => {
+                      e.currentTarget.currentTime = 0;
+                      e.currentTarget.play().catch(() => {});
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.pause();
+                      e.currentTarget.currentTime = 0;
+                    }}
+                  />
+                ) : (
+                  <FileVideo className="w-5 h-5 text-gray-400" />
+                )}
+              </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center space-x-2">
                   <h4 className="font-medium text-gray-900 truncate">

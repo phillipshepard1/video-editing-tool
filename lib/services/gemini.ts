@@ -202,6 +202,22 @@ export async function analyzeVideoWithTakes(
     2. QUALITY ASSESSMENT: Rate each take on a 1-10 scale considering delivery, clarity, confidence, and completeness
     3. BEST TAKE SELECTION: Choose the highest quality version of each content group
     4. DETAILED REASONING: Explain why one take is better than others
+    5. PRECISE BOUNDARIES: Identify the EXACT moment speech starts and ends, excluding silence
+    
+    CRITICAL SILENCE DETECTION INSTRUCTIONS:
+    
+    BEFORE analyzing content quality, for EACH segment:
+    1. IDENTIFY SILENCE AT START: Detect any dead air/silence at the beginning
+       - Mark the timestamp when ACTUAL SPEECH begins (not just when segment starts)
+       - Note if there's 1+ seconds of silence before speech
+    2. IDENTIFY SILENCE AT END: Detect trailing silence after speech ends
+       - Mark when the speaker STOPS talking (not when segment ends)
+       - Note any dead air after the last word
+    3. SPEECH BOUNDARIES: Provide both:
+       - "segmentStart": When the video segment begins (may include silence)
+       - "speechStart": When the person ACTUALLY starts speaking
+       - "speechEnd": When the person STOPS speaking  
+       - "segmentEnd": When the video segment ends (may include silence)
     
     ANALYSIS CRITERIA FOR TAKES:
     
@@ -262,7 +278,12 @@ export async function analyzeVideoWithTakes(
               "id": "take-1",
               "startTime": "MM:SS",
               "endTime": "MM:SS",
+              "speechStart": "MM:SS",
+              "speechEnd": "MM:SS",
+              "leadingSilence": number,
+              "trailingSilence": number,
               "duration": number,
+              "speechDuration": number,
               "transcript": "First 100 chars of what was said...",
               "qualityScore": 1-10,
               "issues": [
@@ -300,7 +321,14 @@ export async function analyzeVideoWithTakes(
       }
     }
     
-    CRITICAL: Focus heavily on finding multiple takes of the same content. Look for patterns where speakers restart, rephrase, or re-attempt explanations. Rate each attempt's quality objectively and choose the best version.
+    CRITICAL INSTRUCTIONS:
+    1. SILENCE DETECTION IS PARAMOUNT: Always identify silence at the beginning and end of each segment
+    2. Provide BOTH segment boundaries (full segment) AND speech boundaries (actual talking)
+    3. Focus heavily on finding multiple takes of the same content
+    4. Look for patterns where speakers restart, rephrase, or re-attempt explanations
+    5. Rate each attempt's quality objectively and choose the best version
+    6. If a segment starts with silence > 2 seconds, flag it as "unnecessary_lead_in"
+    7. Measure silence in seconds (e.g., 3.5 seconds of silence before speech)
   `;
 
   const startTime = Date.now();

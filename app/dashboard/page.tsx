@@ -47,6 +47,7 @@ interface RecentProject {
   renderQuality?: QualityLevel;
   fileSize?: string;
   resolution?: string;
+  jobData?: any; // Store full job data for review
 }
 
 export default function DashboardPage() {
@@ -123,13 +124,15 @@ export default function DashboardPage() {
             return {
               id: job.id,
               name: metadata.originalFileName || job.title || 'Untitled Video',
+              thumbnail: metadata.thumbnail || metadata.videoUrl || null,
               duration,
               editedAt,
               segmentsRemoved,
               timeSaved,
               renderQuality: metadata.quality || 'standard',
               fileSize: metadata.fileSize ? formatFileSize(metadata.fileSize) : 'N/A',
-              resolution: metadata.resolution || '1080p'
+              resolution: metadata.resolution || '1080p',
+              jobData: job // Store full job data for review
             };
           });
           
@@ -703,9 +706,60 @@ export default function DashboardPage() {
                   <div
                     key={project.id}
                     className="bg-gray-50 rounded-xl p-4 border border-gray-200 hover:border-purple-400 hover:shadow-md transition-all cursor-pointer group"
+                    onClick={() => {
+                      if (project.jobData) {
+                        setCurrentJob(project.jobData);
+                        
+                        // Load the job's analysis data
+                        const geminiData = project.jobData.result_data?.gemini_processing as any;
+                        const assembleData = project.jobData.result_data?.assemble_timeline as any;
+                        
+                        if (assembleData?.timeline) {
+                          setAnalysis({
+                            segmentsToRemove: assembleData.timeline.segmentsToRemove || [],
+                            summary: assembleData.timeline.summary,
+                            supabaseUrl: project.jobData.metadata?.videoUrl
+                          });
+                          setView('review');
+                        } else if (geminiData?.analysis) {
+                          setAnalysis(geminiData.analysis);
+                          setView('review');
+                        }
+                      }
+                    }}
                   >
-                    <div className="aspect-video bg-gray-100 rounded-lg mb-3 flex items-center justify-center">
-                      <Video className="w-8 h-8 text-gray-400" />
+                    <div className="aspect-video bg-gray-100 rounded-lg mb-3 flex items-center justify-center overflow-hidden relative">
+                      {project.thumbnail ? (
+                        <div className="w-full h-full relative">
+                          {project.thumbnail.startsWith('http') || project.thumbnail.startsWith('blob:') ? (
+                            <video 
+                              className="w-full h-full object-cover"
+                              src={project.thumbnail}
+                              muted
+                              playsInline
+                              onMouseEnter={(e) => {
+                                e.currentTarget.currentTime = 0;
+                                e.currentTarget.play().catch(() => {});
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.pause();
+                                e.currentTarget.currentTime = 0;
+                              }}
+                            />
+                          ) : (
+                            <img 
+                              src={project.thumbnail} 
+                              alt={project.name}
+                              className="w-full h-full object-cover"
+                            />
+                          )}
+                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all flex items-center justify-center">
+                            <Play className="w-10 h-10 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                        </div>
+                      ) : (
+                        <Video className="w-8 h-8 text-gray-400" />
+                      )}
                     </div>
                     <div className="flex items-start justify-between mb-1">
                       <h3 className="text-gray-900 font-medium group-hover:text-purple-600 transition-colors flex-1">

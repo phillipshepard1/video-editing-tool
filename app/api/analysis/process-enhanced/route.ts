@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { analyzeVideoWithTakes } from '@/lib/services/gemini';
+import { processAnalysisWithRefinement } from '@/lib/segment-refinement';
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,16 +38,34 @@ export async function POST(request: NextRequest) {
       console.log('Enhanced analysis completed');
       console.log('Content groups found:', enhancedResult.contentGroups?.length || 0);
       console.log('Total takes analyzed:', enhancedResult.summary?.takesAnalyzed || 0);
+      
+      // Apply segment boundary refinement to trim silence
+      console.log('Applying segment boundary refinement...');
+      const refinedResult = processAnalysisWithRefinement(enhancedResult, {
+        trimSilence: true,
+        mergeAdjacent: false, // Don't merge for take-based analysis
+        addBuffers: false, // Don't add buffers yet, let user decide
+        silenceThreshold: 0.5 // Trim silence longer than 0.5 seconds
+      });
+      
+      // Log refinement results
+      if (refinedResult.contentGroups) {
+        const refinedTakes = refinedResult.contentGroups.reduce((count, group) => {
+          return count + group.takes.filter((t: any) => t.wasRefined).length;
+        }, 0);
+        console.log(`Refined ${refinedTakes} takes with silence trimming`);
+      }
 
       const processingTime = Date.now() - startTime;
 
       return NextResponse.json({
         success: true,
-        analysis: enhancedResult,
+        analysis: refinedResult,
         metadata: {
           processingTime,
-          analysisType: 'enhanced-takes',
-          ...enhancedResult.metadata
+          analysisType: 'enhanced-takes-refined',
+          ...refinedResult.metadata,
+          refinementApplied: true
         },
       });
 

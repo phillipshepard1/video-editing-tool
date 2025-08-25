@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { extractFramesFromVideo } from '@/lib/video-utils';
 
 interface QueueVideoUploaderProps {
   onJobCreated?: (jobId: string) => void;
@@ -34,6 +35,18 @@ export function QueueVideoUploader({ onJobCreated }: QueueVideoUploaderProps) {
     setJobId(null);
 
     try {
+      // Generate thumbnail from first frame
+      setUploadStage('Generating thumbnail...');
+      let thumbnailUrl = '';
+      try {
+        const frames = await extractFramesFromVideo(file, 1);
+        if (frames.length > 0) {
+          thumbnailUrl = `data:image/jpeg;base64,${frames[0]}`;
+        }
+      } catch (thumbError) {
+        console.warn('Could not generate thumbnail:', thumbError);
+      }
+
       // Create form data
       const formData = new FormData();
       formData.append('video', file); // API expects 'video' not 'file'
@@ -42,13 +55,14 @@ export function QueueVideoUploader({ onJobCreated }: QueueVideoUploaderProps) {
       // Don't send userId if we don't have a valid UUID - let the backend handle it
       formData.append('priority', 'normal');
       
-      // Add processing options
+      // Add processing options with thumbnail
       const processingOptions = {
         targetDuration: 60,
         chunkSize: 50 * 1024 * 1024, // 50MB chunks
         analysisOptions: {
           thoroughness: 'standard'
-        }
+        },
+        thumbnail: thumbnailUrl
       };
       formData.append('processingOptions', JSON.stringify(processingOptions));
 
