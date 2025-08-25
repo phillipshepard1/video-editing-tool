@@ -9,10 +9,11 @@ import { EnhancedFilterPanel } from './EnhancedFilterPanel';
 import { FinalReviewPanel } from './FinalReviewPanel';
 import { ContentGroupsPanel } from './ContentGroupsPanel';
 import { ClusterTimeline } from './timeline/ClusterTimeline';
+import { SilenceTimeline } from './timeline/SilenceTimeline';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
-import { ChevronRight, Save, BookmarkPlus, GitCompare, Users, Film } from 'lucide-react';
+import { ChevronRight, Save, BookmarkPlus, GitCompare, Users, Film, VolumeX, Layers, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface WorkflowManagerProps {
@@ -57,8 +58,10 @@ export function WorkflowManagerV2({
   // Groups View state
   const [showGroupsView, setShowGroupsView] = useState(false);
   const [showTimelineView, setShowTimelineView] = useState(false);
+  const [timelineStage, setTimelineStage] = useState<'clusters' | 'silence' | 'final'>('clusters');
   const [takeSelections, setTakeSelections] = useState<TakeSelection[]>([]);
   const [contentGroups, setContentGroups] = useState<ContentGroup[]>([]);
+  const [silenceSegments, setSilenceSegments] = useState<any[]>([]);
 
   // Initialize enhanced analysis and content groups
   useEffect(() => {
@@ -199,11 +202,42 @@ export function WorkflowManagerV2({
     handleTakeSelection(selection);
   };
 
-  // Handle progress to silence timeline (placeholder for now)
+  // Handle progress to silence timeline
   const handleProgressToSilence = () => {
     console.log('Progress to silence timeline requested');
-    // For now, just show a message - we'll implement this in phase 2
-    toast.success('Silence timeline coming in next phase!');
+    setTimelineStage('silence');
+    toast.success('Moving to silence detection stage');
+  };
+
+  // Handle silence decisions
+  const handleSilenceDecisions = (segments: any[]) => {
+    setSilenceSegments(segments);
+    // Add silence segments to final removal list
+    const silenceSegmentsToRemove = segments
+      .filter(s => s.shouldRemove)
+      .map(s => ({
+        id: s.id,
+        selected: true,
+        startTime: s.startTime.toString(),
+        endTime: s.endTime.toString(),
+        duration: s.duration,
+        reason: `Silence (${s.decibels}dB)`,
+        confidence: s.confidence,
+        category: 'pause' as const
+      } as EnhancedSegment));
+    
+    setFinalSegmentsToRemove(prev => [...prev, ...silenceSegmentsToRemove]);
+  };
+
+  // Handle progress to final review
+  const handleProgressToFinal = () => {
+    setTimelineStage('final');
+    toast.success('Moving to final review');
+  };
+
+  // Handle back to clusters
+  const handleBackToClusters = () => {
+    setTimelineStage('clusters');
   };
 
   // Convert traditional clusters to content groups for timeline compatibility
@@ -216,7 +250,7 @@ export function WorkflowManagerV2({
     return clusters.map((cluster, index) => ({
       id: cluster.id,
       name: `Cluster ${index + 1}`,
-      description: cluster.title || `${cluster.attempts.length} segments found`,
+      description: cluster.name || `${cluster.attempts.length} segments found`,
       contentType: 'general' as const,
       timeRange: {
         start: cluster.timeRange.start,
@@ -321,6 +355,7 @@ export function WorkflowManagerV2({
                   setShowTimelineView(!showTimelineView);
                   if (!showTimelineView) {
                     setShowGroupsView(false); // Turn off groups view when enabling timeline
+                    setTimelineStage('clusters'); // Reset to first stage
                   }
                 }}
                 variant={showTimelineView ? "default" : "outline"}
@@ -331,7 +366,7 @@ export function WorkflowManagerV2({
                 }`}
               >
                 <Film className="w-4 h-4" />
-                {showTimelineView ? "Exit New Feature" : "🚀 New Feature"}
+                {showTimelineView ? "Exit Timeline Mode" : "🚀 New Timeline Editor"}
               </Button>
             )}
             
@@ -502,14 +537,74 @@ export function WorkflowManagerV2({
 
       {/* Step Content */}
       {showTimelineView ? (
-        <ClusterTimeline
-          contentGroups={getTimelineCompatibleGroups}
-          videoUrl={supabaseUrl || videoUrl}
-          videoDuration={videoDuration}
-          onClusterDecision={handleClusterDecision}
-          onProgressToSilence={handleProgressToSilence}
-          originalFilename={originalFilename}
-        />
+        <>
+          {/* Timeline stage indicator */}
+          {timelineStage !== 'final' && (
+            <Card className="p-4 bg-white border-gray-200 shadow-sm mb-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
+                    timelineStage === 'clusters' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    <Layers className="w-4 h-4" />
+                    <span className="text-sm font-medium">1. Cluster Timeline</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                  <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
+                    timelineStage === 'silence' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    <VolumeX className="w-4 h-4" />
+                    <span className="text-sm font-medium">2. Silence Timeline</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                  <div className={`flex items-center gap-2 px-3 py-1 rounded-full bg-gray-100 text-gray-500`}>
+                    <CheckCircle className="w-4 h-4" />
+                    <span className="text-sm font-medium">3. Final Review</span>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
+          
+          {/* Stage content */}
+          {timelineStage === 'clusters' && (
+            <ClusterTimeline
+              contentGroups={getTimelineCompatibleGroups}
+              videoUrl={supabaseUrl || videoUrl}
+              videoDuration={videoDuration}
+              onClusterDecision={handleClusterDecision}
+              onProgressToSilence={handleProgressToSilence}
+              originalFilename={originalFilename}
+            />
+          )}
+          
+          {timelineStage === 'silence' && (
+            <SilenceTimeline
+              videoUrl={supabaseUrl || videoUrl}
+              videoDuration={videoDuration}
+              onSilenceDecisions={handleSilenceDecisions}
+              onProgressToFinal={handleProgressToFinal}
+              onBack={handleBackToClusters}
+              originalFilename={originalFilename}
+            />
+          )}
+          
+          {timelineStage === 'final' && (
+            <FinalReviewPanel
+              sessionId={savedSessionId || undefined}
+              finalSegmentsToRemove={finalSegmentsToRemove}
+              clusters={clusters}
+              clusterSelections={clusterSelections}
+              originalDuration={originalDuration}
+              finalDuration={originalDuration - finalSegmentsToRemove.reduce((sum, s) => sum + s.duration, 0)}
+              onExport={onExport}
+              videoUrl={videoUrl}
+              videoRef={videoRef}
+              videoDuration={videoDuration}
+              supabaseUrl={supabaseUrl}
+            />
+          )}
+        </>
       ) : showGroupsView ? (
         <ContentGroupsPanel
           contentGroups={contentGroups}
@@ -551,7 +646,7 @@ export function WorkflowManagerV2({
 
           {currentStep === 3 && (
             <FinalReviewPanel
-              sessionId={savedSessionId}
+              sessionId={savedSessionId || undefined}
               finalSegmentsToRemove={finalSegmentsToRemove}
               clusters={clusters}
               clusterSelections={clusterSelections}
