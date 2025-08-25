@@ -186,9 +186,9 @@ export function ClusterTimeline({
   }, [contentGroups, decisions]);
 
   return (
-    <div className="cluster-timeline-container w-full h-screen flex flex-col bg-gray-50">
+    <div className="cluster-timeline-container w-full h-full min-h-screen flex flex-col bg-gray-50">
       {/* Header */}
-      <div className="cluster-timeline-header bg-white border-b border-gray-200 px-6 py-4">
+      <div className="cluster-timeline-header bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-semibold text-gray-900">Cluster Timeline</h2>
@@ -219,9 +219,9 @@ export function ClusterTimeline({
       </div>
 
       {/* Main content area */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
         {/* Video player - large and prominent */}
-        <div className="flex-1 p-6">
+        <div className="flex-1 p-6 overflow-y-auto">
           <Card className="w-full h-full">
             <div className="relative w-full h-full bg-black rounded-lg overflow-hidden">
               {videoUrl ? (
@@ -245,7 +245,7 @@ export function ClusterTimeline({
                   {/* Selected segment indicator */}
                   {selectedSegment && (
                     <div className="absolute top-4 left-4 bg-blue-600/90 text-white px-3 py-1 rounded-md text-sm">
-                      Take {currentCluster?.takes.findIndex(t => t.id === selectedSegment.takeId) + 1 || '?'} - 
+                      Take {currentCluster ? (currentCluster.takes.findIndex(t => t.id === selectedSegment.takeId) + 1) : '?'} - 
                       Quality: {selectedSegment.qualityScore}/10
                     </div>
                   )}
@@ -386,7 +386,7 @@ export function ClusterTimeline({
       </div>
 
       {/* Timeline track - bottom section */}
-      <div className="h-32 bg-white border-t border-gray-200 p-4">
+      <div className="h-32 bg-white border-t border-gray-200 p-4 flex-shrink-0">
         <div className="w-full h-full">
           <div className="text-sm text-gray-600 mb-2 flex items-center justify-between">
             <span>Timeline - Click segments to review takes</span>

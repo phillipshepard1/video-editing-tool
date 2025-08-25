@@ -186,9 +186,9 @@ export function SilenceTimeline({
   }, []);
 
   return (
-    <div className="silence-timeline-container w-full h-screen flex flex-col bg-gray-50">
+    <div className="silence-timeline-container w-full h-full min-h-screen flex flex-col bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
+      <div className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button variant="ghost" onClick={onBack} size="sm">
@@ -231,7 +231,7 @@ export function SilenceTimeline({
       </div>
 
       {/* Main content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
         {/* Video player */}
         <div className="flex-1 p-6">
           <Card className="w-full h-full">
@@ -446,7 +446,7 @@ export function SilenceTimeline({
       </div>
 
       {/* Timeline visualization - bottom */}
-      <div className="h-32 bg-white border-t border-gray-200 p-4">
+      <div className="h-32 bg-white border-t border-gray-200 p-4 flex-shrink-0">
         <div className="w-full h-full">
           <div className="text-sm text-gray-600 mb-2 flex items-center justify-between">
             <span>

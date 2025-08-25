@@ -568,25 +568,29 @@ export function WorkflowManagerV2({
           
           {/* Stage content */}
           {timelineStage === 'clusters' && (
-            <ClusterTimeline
-              contentGroups={getTimelineCompatibleGroups}
-              videoUrl={supabaseUrl || videoUrl}
-              videoDuration={videoDuration}
-              onClusterDecision={handleClusterDecision}
-              onProgressToSilence={handleProgressToSilence}
-              originalFilename={originalFilename}
-            />
+            <div className="h-[calc(100vh-200px)] min-h-[600px]">
+              <ClusterTimeline
+                contentGroups={getTimelineCompatibleGroups}
+                videoUrl={supabaseUrl || videoUrl}
+                videoDuration={videoDuration}
+                onClusterDecision={handleClusterDecision}
+                onProgressToSilence={handleProgressToSilence}
+                originalFilename={originalFilename}
+              />
+            </div>
           )}
           
           {timelineStage === 'silence' && (
-            <SilenceTimeline
-              videoUrl={supabaseUrl || videoUrl}
-              videoDuration={videoDuration}
-              onSilenceDecisions={handleSilenceDecisions}
-              onProgressToFinal={handleProgressToFinal}
-              onBack={handleBackToClusters}
-              originalFilename={originalFilename}
-            />
+            <div className="h-[calc(100vh-200px)] min-h-[600px]">
+              <SilenceTimeline
+                videoUrl={supabaseUrl || videoUrl}
+                videoDuration={videoDuration}
+                onSilenceDecisions={handleSilenceDecisions}
+                onProgressToFinal={handleProgressToFinal}
+                onBack={handleBackToClusters}
+                originalFilename={originalFilename}
+              />
+            </div>
           )}
           
           {timelineStage === 'final' && (
