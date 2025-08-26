@@ -37,6 +37,22 @@ export interface ContentGroup {
   confidence: number; // AI confidence in grouping and selection
 }
 
+// Separate interface for metadata to allow flexibility
+export interface AnalysisMetadata {
+  processingTime: number;
+  tokenCount: number;
+  estimatedCost: number;
+  analysisVersion: string;
+  clusterAnalysis?: any; // Metadata from cluster-only analysis
+  silenceAnalysis?: any; // Metadata from silence-only analysis
+  analysisType?: string;
+  totalClusters?: number;
+  totalTakes?: number;
+  totalSilences?: number;
+  totalSilenceDuration?: number;
+  [key: string]: any; // Allow any additional properties
+}
+
 export interface EnhancedAnalysisResult {
   segments: any[]; // Existing segment data
   contentGroups: ContentGroup[];
@@ -49,12 +65,7 @@ export interface EnhancedAnalysisResult {
     takesAnalyzed: number;
     averageQualityImprovement: number; // How much quality improved by selecting best takes
   };
-  metadata: {
-    processingTime: number;
-    tokenCount: number;
-    estimatedCost: number;
-    analysisVersion: string;
-  };
+  metadata: AnalysisMetadata;
 }
 
 export interface TakeSelection {

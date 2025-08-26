@@ -464,23 +464,64 @@ Return only valid JSON in this format:
         Buffer.from(closeDelimiter)
       ]);
 
-      const uploadResponse = await fetch(
-        `https://generativelanguage.googleapis.com/upload/v1beta/files?uploadType=multipart&key=${process.env.GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': `multipart/related; boundary=${boundary}`,
-            'Content-Length': multipartBody.length.toString()
-          },
-          body: multipartBody,
+      // Add retry logic for network errors
+      let uploadResponse;
+      const maxRetries = 3;
+      let lastError = null;
+      
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`[Attempt ${attempt}/${maxRetries}] Uploading chunk ${chunk.chunk_index} to Gemini`);
+          
+          uploadResponse = await fetch(
+            `https://generativelanguage.googleapis.com/upload/v1beta/files?uploadType=multipart&key=${process.env.GEMINI_API_KEY}`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': `multipart/related; boundary=${boundary}`,
+                'Content-Length': multipartBody.length.toString()
+              },
+              body: multipartBody,
+              // Add timeout
+              signal: AbortSignal.timeout(60000) // 60 second timeout
+            }
+          );
+          
+          if (uploadResponse.ok) {
+            break; // Success, exit retry loop
+          }
+          
+          const errorText = await uploadResponse.text();
+          lastError = new Error(`Gemini upload failed: ${errorText}`);
+          console.error(`Upload failed (attempt ${attempt}):`, errorText);
+          
+        } catch (error) {
+          lastError = error;
+          console.error(`Network error (attempt ${attempt}):`, error);
+          
+          // Check if it's a network error that should be retried
+          const errorMessage = (error as any)?.message?.toLowerCase() || '';
+          const isNetworkError = errorMessage.includes('econnreset') || 
+                                errorMessage.includes('fetch failed') || 
+                                errorMessage.includes('network') ||
+                                errorMessage.includes('timeout') ||
+                                errorMessage.includes('aborted');
+          
+          if (isNetworkError && attempt < maxRetries) {
+            // Wait before retrying (exponential backoff)
+            const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+            console.log(`Network error detected. Waiting ${waitTime}ms before retry...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          } else if (!isNetworkError) {
+            throw error; // Don't retry non-network errors
+          }
         }
-      );
+      }
 
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        console.error('Gemini upload failed:', errorText);
+      if (!uploadResponse || !uploadResponse.ok) {
+        console.error('Gemini upload failed after all retries');
         console.error('Chunk size:', buffer.length, 'bytes');
-        throw new Error(`Gemini upload failed: ${errorText}`);
+        throw lastError || new Error('Upload failed after all retries');
       }
 
       const uploadResult = await uploadResponse.json();

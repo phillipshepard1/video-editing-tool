@@ -177,101 +177,92 @@ export async function getFileStatus(fileUri: string): Promise<any> {
   return response.json();
 }
 
-// Enhanced analysis with content grouping and take quality assessment
-export async function analyzeVideoWithTakes(
-  fileUri: string,
-  prompt: string,
-  targetDuration?: number
-): Promise<EnhancedAnalysisResult> {
+// Analyze video for content clusters (multiple takes)
+export async function analyzeVideoForClusters(
+  fileUri: string
+): Promise<{ contentGroups: ContentGroup[], metadata: any }> {
   const model = genAI.getGenerativeModel({
     model: 'gemini-2.5-pro',
     generationConfig: {
-      temperature: 0.2, // Lower temperature for more consistent quality scoring
+      temperature: 0.2,
       topP: 0.8,
       topK: 40,
-      maxOutputTokens: 16384, // More tokens for detailed analysis
+      maxOutputTokens: 8192,
       responseMimeType: 'application/json',
     },
   });
 
-  const simplifiedPrompt = `
-    Analyze this video for exactly TWO things:
-
-    1. REPEATED CONTENT CLUSTERS (within 45-second windows):
-       - Find segments where the speaker says SIMILAR OR IDENTICAL content multiple times
-       - Look for these specific patterns:
-         * False starts: speaker begins, stops, then restarts with same content
-         * Retakes: "let's redo that", "do that again", "let me try that again"
-         * Repeated phrases: speaker repeats the same words/sentences
-         * Multiple attempts: trying to explain the same concept differently
-       - ONLY group segments that contain actually similar content/words
-       - Group ONLY if attempts occur within 45 seconds of each other
-       - Do NOT group just because segments are close in time
-       - Include brief transcript of what was said (first 50 characters)
-       - DO NOT rank quality or pick winners - user will decide
-       - IMPORTANT: For timeRange, use the EARLIEST start time and LATEST end time of the actual takes in the cluster (tight boundaries only)
-
-    2. SILENCE DETECTION:
-       - Mark every silence/pause longer than 2 seconds
-       - Be precise about start and end timestamps
-       - Include both dead air and long pauses between words
-
+  const clusterPrompt = `
+    Analyze this video ONLY for repeated content clusters (multiple takes).
+    
+    FOCUS ONLY ON FINDING CLUSTERS:
+    - Find segments where the speaker says SIMILAR OR IDENTICAL content multiple times
+    - Look for these specific patterns:
+      * False starts: speaker begins, stops, then restarts with same content
+      * Retakes: phrases like "let's redo that", "let me try that again", "actually..."
+      * Repeated phrases: speaker repeats the same words/sentences
+      * Multiple attempts: trying to say the same thing differently
+    
+    CLUSTERING RULES:
+    - ONLY group segments that contain actually similar content/words
+    - Group ONLY if attempts occur within 60 seconds of each other
+    - Do NOT group just because segments are close in time
+    - Include brief transcript of what was said (first 100 characters)
+    
+    For the example video:
+    - Bad take from 0:08 to 0:29
+    - Good take of the SAME content from 0:32 to 0:53
+    These should be identified as ONE cluster with TWO takes
+    
     Return ONLY a valid JSON object with this EXACT structure:
     {
-      "segments": [
-        {
-          "startTime": "MM:SS",
-          "endTime": "MM:SS", 
-          "duration": number,
-          "reason": "X-second silence",
-          "category": "silence",
-          "confidence": 0.0-1.0
-        }
-      ],
       "contentGroups": [
         {
-          "id": "cluster-X",
-          "name": "Brief description of content",
-          "description": "What the speaker is trying to say",
+          "id": "cluster-1",
+          "name": "Brief description of what they're trying to say",
+          "description": "More detailed description of the content",
           "takes": [
             {
-              "id": "take-X",
-              "startTime": "MM:SS",
-              "endTime": "MM:SS",
-              "duration": number,
-              "transcript": "First 50 chars of what was said...",
+              "id": "take-1",
+              "startTime": "00:08",
+              "endTime": "00:29",
+              "duration": 21,
+              "transcript": "First 100 chars of what was said...",
+              "qualityScore": 0,
+              "issues": ["stumbling", "unclear"],
+              "qualities": [],
+              "confidence": 0.9
+            },
+            {
+              "id": "take-2",
+              "startTime": "00:32",
+              "endTime": "00:53",
+              "duration": 21,
+              "transcript": "First 100 chars of what was said...",
               "qualityScore": 0,
               "issues": [],
-              "qualities": [],
-              "confidence": 0.0-1.0
+              "qualities": ["clear", "complete"],
+              "confidence": 0.9
             }
           ],
           "bestTakeId": "",
-          "reasoning": "",
+          "reasoning": "User will select best take",
           "contentType": "general",
-          "timeRange": {"start": "MM:SS", "end": "MM:SS"},
+          "timeRange": {"start": "00:08", "end": "00:53"},
           "averageQuality": 0,
-          "confidence": 0.0-1.0
+          "confidence": 0.9
         }
       ],
-      "summary": {
-        "originalDuration": number,
-        "finalDuration": number, 
-        "timeRemoved": 0,
-        "segmentCount": number,
-        "groupCount": number,
-        "takesAnalyzed": number,
-        "averageQualityImprovement": 0
+      "metadata": {
+        "totalClusters": 1,
+        "totalTakes": 2
       }
     }
-
-    CRITICAL INSTRUCTIONS for timeRange and timestamps:
-    - timeRange.start = earliest startTime of any take in this cluster
-    - timeRange.end = latest endTime of any take in this cluster
-    - Do NOT extend timeRange beyond actual take boundaries
-    - Each cluster should have tight, precise boundaries around actual content
-    - Use ONLY MM:SS format for ALL timestamps (e.g., "01:23" not "83" or "01:23.00")
-    - Be consistent - don't mix seconds and MM:SS formats
+    
+    CRITICAL:
+    - Use MM:SS format for timestamps (e.g., "00:08" not "8" or "0:08")
+    - timeRange should span from first take start to last take end
+    - Focus ONLY on finding clusters, ignore silence detection
   `;
 
   const startTime = Date.now();
@@ -284,7 +275,7 @@ export async function analyzeVideoWithTakes(
           fileUri: fileUri,
         },
       },
-      { text: simplifiedPrompt },
+      { text: clusterPrompt },
     ]);
 
     const response = await result.response;
@@ -296,17 +287,172 @@ export async function analyzeVideoWithTakes(
     const estimatedCost = calculateCost(tokenCount);
 
     return {
-      ...parsed,
+      contentGroups: parsed.contentGroups || [],
       metadata: {
         processingTime,
         tokenCount,
         estimatedCost,
-        analysisVersion: 'enhanced-v1.0',
+        analysisType: 'clusters-only',
+        ...parsed.metadata
       },
     };
   } catch (error) {
-    console.error('Enhanced analysis error:', error);
-    throw new Error('Failed to analyze video with take detection');
+    console.error('Cluster analysis error:', error);
+    throw new Error('Failed to analyze video for clusters');
+  }
+}
+
+// Analyze video for silence detection
+export async function analyzeVideoForSilence(
+  fileUri: string
+): Promise<{ segments: VideoSegment[], metadata: any }> {
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-2.5-pro',
+    generationConfig: {
+      temperature: 0.1, // Very low temperature for consistent detection
+      topP: 0.8,
+      topK: 40,
+      maxOutputTokens: 8192,
+      responseMimeType: 'application/json',
+    },
+  });
+
+  const silencePrompt = `
+    Analyze this video ONLY for silence detection.
+    
+    FOCUS ONLY ON FINDING SILENCES:
+    - Detect ALL silences/pauses longer than 2 seconds
+    - Include dead air (no speech at all)
+    - Include long pauses between words or sentences
+    - Be VERY precise about start and end timestamps
+    - Measure silence duration accurately
+    
+    Return ONLY a valid JSON object with this EXACT structure:
+    {
+      "segments": [
+        {
+          "startTime": "00:05",
+          "endTime": "00:08",
+          "duration": 3,
+          "reason": "3-second silence",
+          "category": "silence",
+          "confidence": 0.95
+        }
+      ],
+      "metadata": {
+        "totalSilences": 1,
+        "totalSilenceDuration": 3
+      }
+    }
+    
+    CRITICAL:
+    - Use MM:SS format for timestamps (e.g., "01:23" not "83")
+    - Be extremely accurate with timestamp alignment
+    - Only include silences longer than 2 seconds
+    - Focus ONLY on silence detection, ignore content clusters
+  `;
+
+  const startTime = Date.now();
+
+  try {
+    const result = await model.generateContent([
+      {
+        fileData: {
+          mimeType: 'video/mp4',
+          fileUri: fileUri,
+        },
+      },
+      { text: silencePrompt },
+    ]);
+
+    const response = await result.response;
+    const text = response.text();
+    const parsed = JSON.parse(text);
+
+    const processingTime = Date.now() - startTime;
+    const tokenCount = response.usageMetadata?.totalTokenCount || 0;
+    const estimatedCost = calculateCost(tokenCount);
+
+    return {
+      segments: parsed.segments || [],
+      metadata: {
+        processingTime,
+        tokenCount,
+        estimatedCost,
+        analysisType: 'silence-only',
+        ...parsed.metadata
+      },
+    };
+  } catch (error) {
+    console.error('Silence analysis error:', error);
+    throw new Error('Failed to analyze video for silence');
+  }
+}
+
+// Combined analysis using separate API calls
+export async function analyzeVideoWithTakes(
+  fileUri: string,
+  prompt: string,
+  targetDuration?: number
+): Promise<EnhancedAnalysisResult> {
+  console.log('Starting separate analysis for clusters and silence...');
+  
+  try {
+    // Run both analyses in parallel for efficiency
+    const [clusterResult, silenceResult] = await Promise.all([
+      analyzeVideoForClusters(fileUri),
+      analyzeVideoForSilence(fileUri)
+    ]);
+
+    console.log('Cluster analysis complete:', clusterResult.contentGroups.length, 'clusters found');
+    console.log('Cluster details:', JSON.stringify(clusterResult.contentGroups, null, 2));
+    console.log('Silence analysis complete:', silenceResult.segments.length, 'silences found');
+    console.log('Silence details:', JSON.stringify(silenceResult.segments, null, 2));
+
+    // Calculate summary statistics
+    const totalTakes = clusterResult.contentGroups.reduce((sum, group) => 
+      sum + group.takes.length, 0
+    );
+    
+    const totalSilenceDuration = silenceResult.segments.reduce((sum, seg) => 
+      sum + seg.duration, 0
+    );
+
+    // Build metadata object using Object.assign to avoid TS issues
+    const metadata = Object.assign(
+      {},
+      {
+        processingTime: clusterResult.metadata.processingTime + silenceResult.metadata.processingTime,
+        tokenCount: clusterResult.metadata.tokenCount + silenceResult.metadata.tokenCount,
+        estimatedCost: clusterResult.metadata.estimatedCost + silenceResult.metadata.estimatedCost,
+        analysisVersion: 'enhanced-v2.0-separate'
+      },
+      {
+        clusterAnalysis: clusterResult.metadata,
+        silenceAnalysis: silenceResult.metadata
+      }
+    );
+
+    // Combine results
+    const combinedResult: EnhancedAnalysisResult = {
+      segments: silenceResult.segments,
+      contentGroups: clusterResult.contentGroups,
+      summary: {
+        originalDuration: 0, // Will be set by caller
+        finalDuration: 0, // Will be calculated later
+        timeRemoved: totalSilenceDuration,
+        segmentCount: silenceResult.segments.length,
+        groupCount: clusterResult.contentGroups.length,
+        takesAnalyzed: totalTakes,
+        averageQualityImprovement: 0
+      },
+      metadata
+    };
+
+    return combinedResult;
+  } catch (error) {
+    console.error('Combined analysis error:', error);
+    throw new Error('Failed to perform combined analysis');
   }
 }
 

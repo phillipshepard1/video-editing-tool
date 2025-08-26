@@ -70,6 +70,15 @@ export function ClusterTimeline({
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  
+  // Debug logging
+  useEffect(() => {
+    console.log('[ClusterTimeline] Received contentGroups:', contentGroups);
+    console.log('[ClusterTimeline] Content groups count:', contentGroups.length);
+    if (contentGroups.length > 0) {
+      console.log('[ClusterTimeline] First group:', contentGroups[0]);
+    }
+  }, [contentGroups]);
 
   // Parse time string to seconds
   const parseTimeToSeconds = useCallback((timeStr: string): number => {
@@ -189,8 +198,12 @@ export function ClusterTimeline({
     onClusterDecision(segment.clusterId, takeId, decision);
   }, [timelineSegments, contentGroups, onClusterDecision]);
 
-  // Check if all clusters have decisions
+  // Check if all clusters have decisions (or if there are no clusters)
   const canProgressToSilence = useMemo(() => {
+    // If no clusters, can always progress
+    if (contentGroups.length === 0) return true;
+    
+    // Otherwise, check if all clusters have decisions
     return contentGroups.every(group => 
       group.takes.some(take => 
         decisions.get(take.id)?.status === 'approved'
@@ -476,12 +489,23 @@ export function ClusterTimeline({
       <div className="h-32 bg-white border-t border-gray-200 p-4 flex-shrink-0">
         <div className="w-full h-full">
           <div className="text-sm text-gray-600 mb-2 flex items-center justify-between">
-            <span>Timeline - Click segments to review takes</span>
+            <span>
+              {contentGroups.length === 0 
+                ? 'No clusters detected - Click Continue to proceed to Silence Detection' 
+                : 'Timeline - Click segments to review takes'}
+            </span>
             <span className="font-mono">{formatTime(videoDuration)} total</span>
           </div>
           
           {/* Timeline track */}
           <div className="relative w-full h-16 bg-gray-100 rounded-lg overflow-hidden">
+            {/* Show empty state message if no clusters */}
+            {contentGroups.length === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">
+                No repeated takes or clusters detected in this video
+              </div>
+            )}
+            
             {/* Time markers */}
             <div className="absolute inset-0">
               {Array.from({ length: Math.ceil(videoDuration / 30) }, (_, i) => {
@@ -501,8 +525,55 @@ export function ClusterTimeline({
               })}
             </div>
             
-            {/* Timeline segments */}
+            {/* Cluster gray boxes - render behind segments */}
             <div className="absolute inset-0">
+              {contentGroups.map(group => {
+                const startTime = parseTimeToSeconds(group.timeRange.start);
+                const endTime = parseTimeToSeconds(group.timeRange.end);
+                const left = (startTime / videoDuration) * 100;
+                const width = ((endTime - startTime) / videoDuration) * 100;
+                const hasApprovedTake = group.takes.some(take => 
+                  decisions.get(take.id)?.status === 'approved'
+                );
+                const isSelectedCluster = selectedCluster === group.id;
+                
+                return (
+                  <button
+                    key={`cluster-${group.id}`}
+                    onClick={() => {
+                      setSelectedCluster(group.id);
+                      // Jump to first take in cluster
+                      const firstTake = group.takes[0];
+                      if (firstTake && videoRef.current) {
+                        videoRef.current.currentTime = parseTimeToSeconds(firstTake.startTime);
+                      }
+                    }}
+                    className={`absolute h-full transition-all duration-200 ${
+                      isSelectedCluster ? 'z-10' : 'z-0'
+                    }`}
+                    style={{
+                      left: `${left}%`,
+                      width: `${width}%`,
+                      backgroundColor: hasApprovedTake 
+                        ? 'rgba(34, 197, 94, 0.15)' // Green tint if decided
+                        : 'rgba(156, 163, 175, 0.3)', // Gray if pending
+                      border: isSelectedCluster 
+                        ? '2px solid rgba(59, 130, 246, 0.8)' // Blue border when selected
+                        : '1px solid rgba(156, 163, 175, 0.4)',
+                      borderRadius: '6px'
+                    }}
+                    title={`${group.name} - Click to review takes`}
+                  >
+                    <div className="absolute top-1 left-2 text-xs font-medium text-gray-700 pointer-events-none">
+                      Cluster: {group.takes.length} takes
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            
+            {/* Timeline segments (individual takes) - render on top */}
+            <div className="absolute inset-0 z-5">
               {timelineSegments.map(segment => {
                 const left = (segment.startTime / videoDuration) * 100;
                 const width = (segment.duration / videoDuration) * 100;
@@ -512,8 +583,8 @@ export function ClusterTimeline({
                   <button
                     key={segment.id}
                     onClick={() => handleSegmentClick(segment)}
-                    className={`absolute h-full transition-all duration-200 hover:opacity-80 ${
-                      isSelected ? 'ring-2 ring-blue-400 ring-offset-1' : ''
+                    className={`absolute h-12 top-2 transition-all duration-200 hover:opacity-90 hover:z-20 ${
+                      isSelected ? 'ring-2 ring-blue-400 ring-offset-1 z-30' : 'z-15'
                     } ${
                       segment.decision === 'approved' 
                         ? 'ring-2 ring-green-400'
@@ -525,8 +596,10 @@ export function ClusterTimeline({
                       left: `${left}%`,
                       width: `${width}%`,
                       backgroundColor: segment.color,
-                      borderRadius: '4px'
+                      borderRadius: '4px',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
                     }}
+                    title={`Take ${segment.takeId} - Click to preview`}
                   >
                     {/* Segment content */}
                     <div className="w-full h-full flex items-center justify-center relative">
@@ -534,7 +607,7 @@ export function ClusterTimeline({
                         <Crown className="w-3 h-3 text-yellow-600" />
                       )}
                       {segment.decision === 'approved' && (
-                        <CheckCircle className="absolute top-1 right-1 w-3 h-3 text-green-600" />
+                        <CheckCircle className="absolute top-1 right-1 w-3 h-3 text-white drop-shadow" />
                       )}
                     </div>
                   </button>
@@ -542,39 +615,10 @@ export function ClusterTimeline({
               })}
             </div>
             
-            {/* Cluster boundary markers */}
-            <div className="absolute inset-0 pointer-events-none">
-              {contentGroups.map(group => {
-                const startTime = parseTimeToSeconds(group.timeRange.start);
-                const endTime = parseTimeToSeconds(group.timeRange.end);
-                const startLeft = (startTime / videoDuration) * 100;
-                const endLeft = (endTime / videoDuration) * 100;
-                
-                return (
-                  <div key={`boundary-${group.id}`}>
-                    {/* Start boundary line */}
-                    <div
-                      className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-20"
-                      style={{ left: `${startLeft}%` }}
-                    >
-                      <div className="absolute -top-6 -left-6 text-xs text-red-600 whitespace-nowrap">
-                        {group.name}
-                      </div>
-                    </div>
-                    {/* End boundary line */}
-                    <div
-                      className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-20"
-                      style={{ left: `${endLeft}%` }}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-            
             {/* Current time playhead */}
             {videoDuration > 0 && (
               <div
-                className="absolute top-0 bottom-0 w-0.5 bg-blue-600 z-10"
+                className="absolute top-0 bottom-0 w-0.5 bg-blue-600 z-40"
                 style={{ left: `${(currentTime / videoDuration) * 100}%` }}
               >
                 <div className="absolute -top-1 -left-1 w-2 h-2 bg-blue-600 rounded-full"></div>
