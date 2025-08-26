@@ -83,7 +83,12 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchRecentProjects = async () => {
       try {
-        const response = await fetch('/api/jobs?status=completed&limit=6');
+        const userId = user?.id;
+        if (!userId) {
+          setLoadingProjects(false);
+          return;
+        }
+        const response = await fetch(`/api/jobs?status=completed&limit=6&userId=${userId}`);
         if (response.ok) {
           const data = await response.json();
           const jobs = data.jobs || [];
@@ -146,7 +151,7 @@ export default function DashboardPage() {
     };
     
     fetchRecentProjects();
-  }, [refreshJobList]); // Refresh when job list updates
+  }, [refreshJobList, user?.id]); // Refresh when job list updates or user changes
 
   // Stats (in production, these would be calculated from user data)
   const stats = {

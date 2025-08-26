@@ -31,7 +31,6 @@ export function ClusterPanel({
   const [previewingTake, setPreviewingTake] = useState<number | 'winner' | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [previewTimeoutId, setPreviewTimeoutId] = useState<NodeJS.Timeout | null>(null);
-  const [showBuffer, setShowBuffer] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [clipBounds, setClipBounds] = useState<{ start: number; end: number } | null>(null);
@@ -83,9 +82,9 @@ export function ClusterPanel({
     // Store clip boundaries for markers
     setClipBounds({ start: startTime, end: endTime });
 
-    // Apply buffer if enabled
-    const previewStartTime = showBuffer ? Math.max(0, startTime - 3) : startTime;
-    const previewEndTime = showBuffer ? endTime + 3 : endTime;
+    // No buffer - use exact timing
+    const previewStartTime = startTime;
+    const previewEndTime = endTime;
     const previewDuration = (previewEndTime - previewStartTime) * 1000; // Convert to milliseconds
 
     videoRef.current.currentTime = previewStartTime;
@@ -432,19 +431,6 @@ export function ClusterPanel({
                 </div>
                 
                 {/* Buffer preview checkbox */}
-                <div className="flex items-center gap-2 mb-3">
-                  <button
-                    onClick={() => setShowBuffer(!showBuffer)}
-                    className="flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900"
-                  >
-                    {showBuffer ? (
-                      <CheckSquare className="w-4 h-4" />
-                    ) : (
-                      <Square className="w-4 h-4" />
-                    )}
-                    Show 3-second buffer preview
-                  </button>
-                </div>
                 
                 {selectedCluster && (
                   <>

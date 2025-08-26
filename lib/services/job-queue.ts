@@ -442,8 +442,10 @@ export class JobQueueService {
       .limit(limit);
 
     if (userId) {
-      query = query.eq('user_id', userId);
+      // Show both user's jobs AND jobs with null user_id (legacy/test data)
+      query = query.or(`user_id.eq.${userId},user_id.is.null`);
     } else {
+      // If no userId provided, only show null user_id jobs
       query = query.is('user_id', null);
     }
 

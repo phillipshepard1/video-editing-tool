@@ -46,6 +46,7 @@ interface SilenceTimelineProps {
   onProgressToFinal: () => void;
   onBack: () => void;
   originalFilename?: string;
+  initialSilenceSegments?: any[]; // Real silence segments from Gemini analysis
 }
 
 export function SilenceTimeline({
@@ -54,7 +55,8 @@ export function SilenceTimeline({
   onSilenceDecisions,
   onProgressToFinal,
   onBack,
-  originalFilename
+  originalFilename,
+  initialSilenceSegments
 }: SilenceTimelineProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [selectedSegment, setSelectedSegment] = useState<SilenceSegment | null>(null);
@@ -73,18 +75,45 @@ export function SilenceTimeline({
     autoDetect: true
   });
 
-  // Simulate silence detection (in real app, this would analyze audio)
+  // Parse time string to seconds
+  const parseTimeToSeconds = useCallback((timeStr: string): number => {
+    const parts = timeStr.split(':');
+    if (parts.length === 2) {
+      // MM:SS format
+      return parseInt(parts[0]) * 60 + parseFloat(parts[1]);
+    } else if (parts.length === 3) {
+      // HH:MM:SS format
+      return parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseFloat(parts[2]);
+    }
+    return parseFloat(timeStr) || 0;
+  }, []);
+
+  // Initialize with real silence segments from Gemini analysis
   useEffect(() => {
-    if (isAnalyzing && videoDuration > 0) {
-      // Simulate analyzing process
+    if (initialSilenceSegments && initialSilenceSegments.length > 0) {
+      // Convert Gemini segments to SilenceSegment format
+      const convertedSegments: SilenceSegment[] = initialSilenceSegments.map((seg, index) => ({
+        id: `silence-${index}`,
+        startTime: parseTimeToSeconds(seg.startTime),
+        endTime: parseTimeToSeconds(seg.endTime),
+        duration: seg.duration,
+        decibels: -40, // Default decibel level for silence detection
+        type: seg.duration > 3 ? 'silence' : 'low_audio',
+        confidence: seg.confidence || 0.8,
+        shouldRemove: seg.duration >= settings.minSilenceDuration
+      }));
+      
+      setSilenceSegments(convertedSegments.sort((a, b) => a.startTime - b.startTime));
+      setIsAnalyzing(false);
+    } else if (isAnalyzing && videoDuration > 0) {
+      // Fallback to mock data if no real segments provided
       setTimeout(() => {
-        // Generate mock silence segments
         const segments: SilenceSegment[] = [];
-        const segmentCount = Math.floor(videoDuration / 15); // Roughly one silence per 15 seconds
+        const segmentCount = Math.floor(videoDuration / 15);
         
         for (let i = 0; i < segmentCount; i++) {
           const startTime = (i * 15) + Math.random() * 10;
-          const duration = 1 + Math.random() * 3; // 1-4 second silences
+          const duration = 1 + Math.random() * 3;
           
           if (startTime + duration < videoDuration) {
             segments.push({
@@ -104,7 +133,7 @@ export function SilenceTimeline({
         setIsAnalyzing(false);
       }, 2000);
     }
-  }, [videoDuration, settings.minSilenceDuration, isAnalyzing]);
+  }, [initialSilenceSegments, videoDuration, settings.minSilenceDuration, isAnalyzing, parseTimeToSeconds]);
 
   // Handle segment click
   const handleSegmentClick = useCallback((segment: SilenceSegment) => {

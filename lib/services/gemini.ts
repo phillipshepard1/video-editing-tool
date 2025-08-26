@@ -194,141 +194,84 @@ export async function analyzeVideoWithTakes(
     },
   });
 
-  const enhancedPrompt = `
-    Analyze this talking head video with DEEP FOCUS on identifying multiple takes of the same content and rating their quality.
-    
-    PRIMARY OBJECTIVES:
-    1. IDENTIFY CONTENT GROUPS: Look for segments where the speaker attempts the same content multiple times
-    2. QUALITY ASSESSMENT: Rate each take on a 1-10 scale considering delivery, clarity, confidence, and completeness
-    3. BEST TAKE SELECTION: Choose the highest quality version of each content group
-    4. DETAILED REASONING: Explain why one take is better than others
-    5. PRECISE BOUNDARIES: Identify the EXACT moment speech starts and ends, excluding silence
-    
-    CRITICAL SILENCE DETECTION INSTRUCTIONS:
-    
-    BEFORE analyzing content quality, for EACH segment:
-    1. IDENTIFY SILENCE AT START: Detect any dead air/silence at the beginning
-       - Mark the timestamp when ACTUAL SPEECH begins (not just when segment starts)
-       - Note if there's 1+ seconds of silence before speech
-    2. IDENTIFY SILENCE AT END: Detect trailing silence after speech ends
-       - Mark when the speaker STOPS talking (not when segment ends)
-       - Note any dead air after the last word
-    3. SPEECH BOUNDARIES: Provide both:
-       - "segmentStart": When the video segment begins (may include silence)
-       - "speechStart": When the person ACTUALLY starts speaking
-       - "speechEnd": When the person STOPS speaking  
-       - "segmentEnd": When the video segment ends (may include silence)
-    
-    ANALYSIS CRITERIA FOR TAKES:
-    
-    QUALITY FACTORS (Rate 1-10):
-    - Delivery Clarity: Clear speech, good pace, no stumbling
-    - Confidence: Speaker sounds assured and authoritative  
-    - Content Completeness: Full thought expressed without cutoffs
-    - Audio Quality: Clear audio without technical issues
-    - Energy Level: Appropriate energy for the content
-    - Naturalness: Flows naturally without seeming forced
-    
-    CONTENT GROUPING INDICATORS:
-    - False starts followed by retry attempts
-    - Repeated phrases or explanations
-    - Similar content with slight variations
-    - "Let me try that again" or similar restart cues
-    - Multiple approaches to explaining the same concept
-    
-    ISSUES TO IDENTIFY:
-    - audio_quality: Background noise, unclear audio, levels
-    - delivery: Stumbling, unclear speech, pace problems
-    - content: Incomplete thoughts, factual errors, unclear explanations
-    - technical: Video/audio glitches, lighting issues
-    - pacing: Too fast, too slow, awkward pauses
-    - energy: Low energy, monotone, lack of enthusiasm
-    
-    POSITIVE QUALITIES TO IDENTIFY:
-    - clear_delivery: Crisp, well-paced speech
-    - good_pace: Natural rhythm and timing
-    - confident_tone: Assured, authoritative delivery
-    - complete_thought: Full, coherent explanations
-    - good_audio: Clear, professional audio quality
-    
-    ${targetDuration ? `Target final duration: ${targetDuration} minutes` : ''}
-    
-    Additional instructions: ${prompt}
-    
+  const simplifiedPrompt = `
+    Analyze this video for exactly TWO things:
+
+    1. REPEATED CONTENT CLUSTERS (within 45-second windows):
+       - Find segments where the speaker says SIMILAR OR IDENTICAL content multiple times
+       - Look for these specific patterns:
+         * False starts: speaker begins, stops, then restarts with same content
+         * Retakes: "let's redo that", "do that again", "let me try that again"
+         * Repeated phrases: speaker repeats the same words/sentences
+         * Multiple attempts: trying to explain the same concept differently
+       - ONLY group segments that contain actually similar content/words
+       - Group ONLY if attempts occur within 45 seconds of each other
+       - Do NOT group just because segments are close in time
+       - Include brief transcript of what was said (first 50 characters)
+       - DO NOT rank quality or pick winners - user will decide
+       - IMPORTANT: For timeRange, use the EARLIEST start time and LATEST end time of the actual takes in the cluster (tight boundaries only)
+
+    2. SILENCE DETECTION:
+       - Mark every silence/pause longer than 2 seconds
+       - Be precise about start and end timestamps
+       - Include both dead air and long pauses between words
+
     Return ONLY a valid JSON object with this EXACT structure:
     {
       "segments": [
-        // Traditional segments to remove (existing format)
         {
           "startTime": "MM:SS",
           "endTime": "MM:SS", 
           "duration": number,
-          "reason": "string",
-          "category": "pause|filler|redundant|off-topic|technical",
+          "reason": "X-second silence",
+          "category": "silence",
           "confidence": 0.0-1.0
         }
       ],
       "contentGroups": [
         {
-          "id": "group-1",
-          "name": "Introduction Attempts",
-          "description": "Multiple attempts at opening statement",
+          "id": "cluster-X",
+          "name": "Brief description of content",
+          "description": "What the speaker is trying to say",
           "takes": [
             {
-              "id": "take-1",
+              "id": "take-X",
               "startTime": "MM:SS",
               "endTime": "MM:SS",
-              "speechStart": "MM:SS",
-              "speechEnd": "MM:SS",
-              "leadingSilence": number,
-              "trailingSilence": number,
               "duration": number,
-              "speechDuration": number,
-              "transcript": "First 100 chars of what was said...",
-              "qualityScore": 1-10,
-              "issues": [
-                {
-                  "type": "delivery|audio_quality|content|technical|pacing|energy",
-                  "severity": "low|medium|high", 
-                  "description": "Specific issue description"
-                }
-              ],
-              "qualities": [
-                {
-                  "type": "clear_delivery|good_pace|confident_tone|complete_thought|good_audio",
-                  "description": "Specific quality description"
-                }
-              ],
+              "transcript": "First 50 chars of what was said...",
+              "qualityScore": 0,
+              "issues": [],
+              "qualities": [],
               "confidence": 0.0-1.0
             }
           ],
-          "bestTakeId": "take-id",
-          "reasoning": "Detailed explanation of why this take is best",
-          "contentType": "introduction|explanation|conclusion|transition|key_point|general",
+          "bestTakeId": "",
+          "reasoning": "",
+          "contentType": "general",
           "timeRange": {"start": "MM:SS", "end": "MM:SS"},
-          "averageQuality": number,
+          "averageQuality": 0,
           "confidence": 0.0-1.0
         }
       ],
       "summary": {
         "originalDuration": number,
         "finalDuration": number, 
-        "timeRemoved": number,
+        "timeRemoved": 0,
         "segmentCount": number,
         "groupCount": number,
         "takesAnalyzed": number,
-        "averageQualityImprovement": number
+        "averageQualityImprovement": 0
       }
     }
-    
-    CRITICAL INSTRUCTIONS:
-    1. SILENCE DETECTION IS PARAMOUNT: Always identify silence at the beginning and end of each segment
-    2. Provide BOTH segment boundaries (full segment) AND speech boundaries (actual talking)
-    3. Focus heavily on finding multiple takes of the same content
-    4. Look for patterns where speakers restart, rephrase, or re-attempt explanations
-    5. Rate each attempt's quality objectively and choose the best version
-    6. If a segment starts with silence > 2 seconds, flag it as "unnecessary_lead_in"
-    7. Measure silence in seconds (e.g., 3.5 seconds of silence before speech)
+
+    CRITICAL INSTRUCTIONS for timeRange and timestamps:
+    - timeRange.start = earliest startTime of any take in this cluster
+    - timeRange.end = latest endTime of any take in this cluster
+    - Do NOT extend timeRange beyond actual take boundaries
+    - Each cluster should have tight, precise boundaries around actual content
+    - Use ONLY MM:SS format for ALL timestamps (e.g., "01:23" not "83" or "01:23.00")
+    - Be consistent - don't mix seconds and MM:SS formats
   `;
 
   const startTime = Date.now();
@@ -341,7 +284,7 @@ export async function analyzeVideoWithTakes(
           fileUri: fileUri,
         },
       },
-      { text: enhancedPrompt },
+      { text: simplifiedPrompt },
     ]);
 
     const response = await result.response;

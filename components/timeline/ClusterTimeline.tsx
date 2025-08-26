@@ -12,7 +12,9 @@ import {
   Clock,
   BarChart3,
   CheckCircle,
-  AlertTriangle
+  AlertTriangle,
+  Bug,
+  Copy
 } from 'lucide-react';
 
 // Timeline segment for visualization
@@ -46,17 +48,12 @@ interface ClusterTimelineProps {
   originalFilename?: string;
 }
 
-// Color palette for different content groups
-const CLUSTER_COLORS = [
-  'rgba(59, 130, 246, 0.6)',   // Blue
-  'rgba(16, 185, 129, 0.6)',   // Green
-  'rgba(245, 101, 101, 0.6)',  // Red
-  'rgba(139, 92, 246, 0.6)',   // Purple
-  'rgba(245, 158, 11, 0.6)',   // Amber
-  'rgba(236, 72, 153, 0.6)',   // Pink
-  'rgba(14, 165, 233, 0.6)',   // Sky
-  'rgba(34, 197, 94, 0.6)',    // Emerald
-];
+// Color system: Red for unselected takes, Green for selected winner
+const TAKE_COLORS = {
+  unselected: 'rgba(245, 101, 101, 0.8)', // Red - needs user selection
+  selected: 'rgba(34, 197, 94, 0.8)',     // Green - user's choice
+  pending: 'rgba(156, 163, 175, 0.6)'     // Gray - no decision yet
+};
 
 export function ClusterTimeline({
   contentGroups,
@@ -72,6 +69,7 @@ export function ClusterTimeline({
   const [decisions, setDecisions] = useState<Map<string, ClusterDecision>>(new Map());
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
 
   // Parse time string to seconds
   const parseTimeToSeconds = useCallback((timeStr: string): number => {
@@ -91,10 +89,27 @@ export function ClusterTimeline({
     const segments: TimelineSegment[] = [];
     
     contentGroups.forEach((group, groupIndex) => {
-      const color = CLUSTER_COLORS[groupIndex % CLUSTER_COLORS.length];
+      // Check if group has an approved decision
+      const approvedTakeId = group.takes.find(take => 
+        decisions.get(take.id)?.status === 'approved'
+      )?.id;
       
       group.takes.forEach(take => {
         const decision = decisions.get(take.id);
+        // Enhanced color logic: 
+        // - Green for approved take
+        // - Red for other takes in the same group once one is approved
+        // - Gray for pending decisions
+        let color = TAKE_COLORS.pending; // Default gray
+        
+        if (decision?.status === 'approved') {
+          color = TAKE_COLORS.selected; // Green for approved
+        } else if (approvedTakeId && take.id !== approvedTakeId) {
+          color = TAKE_COLORS.unselected; // Red for rejected (other takes in group)
+        } else if (decision?.status === 'rejected') {
+          color = TAKE_COLORS.unselected; // Red for explicitly rejected
+        }
+        
         segments.push({
           id: `${group.id}-${take.id}`,
           takeId: take.id,
@@ -131,16 +146,48 @@ export function ClusterTimeline({
     const segment = timelineSegments.find(s => s.takeId === takeId);
     if (!segment) return;
     
-    const clusterDecision: ClusterDecision = {
-      clusterId: segment.clusterId,
-      selectedTakeId: takeId,
-      status: decision === 'approve' ? 'approved' : 'rejected',
-      timestamp: Date.now()
-    };
+    setDecisions(prev => {
+      const newDecisions = new Map(prev);
+      
+      if (decision === 'approve') {
+        // When approving a take, mark all other takes in the group as rejected
+        const group = contentGroups.find(g => g.id === segment.clusterId);
+        if (group) {
+          group.takes.forEach(take => {
+            if (take.id === takeId) {
+              // Approve the selected take
+              newDecisions.set(take.id, {
+                clusterId: segment.clusterId,
+                selectedTakeId: takeId,
+                status: 'approved',
+                timestamp: Date.now()
+              });
+            } else {
+              // Mark other takes as rejected
+              newDecisions.set(take.id, {
+                clusterId: segment.clusterId,
+                selectedTakeId: takeId, // Still reference the approved take
+                status: 'rejected',
+                timestamp: Date.now()
+              });
+            }
+          });
+        }
+      } else {
+        // Just mark this take as rejected
+        newDecisions.set(takeId, {
+          clusterId: segment.clusterId,
+          selectedTakeId: takeId,
+          status: 'rejected',
+          timestamp: Date.now()
+        });
+      }
+      
+      return newDecisions;
+    });
     
-    setDecisions(prev => new Map(prev).set(takeId, clusterDecision));
     onClusterDecision(segment.clusterId, takeId, decision);
-  }, [timelineSegments, onClusterDecision]);
+  }, [timelineSegments, contentGroups, onClusterDecision]);
 
   // Check if all clusters have decisions
   const canProgressToSilence = useMemo(() => {
@@ -171,6 +218,36 @@ export function ClusterTimeline({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }, []);
 
+  // Generate debug information
+  const generateDebugInfo = useCallback(() => {
+    const debugData = contentGroups.map(group => ({
+      id: group.id,
+      name: group.name,
+      timeRange: group.timeRange,
+      timeRangeParsed: {
+        start: parseTimeToSeconds(group.timeRange.start),
+        end: parseTimeToSeconds(group.timeRange.end)
+      },
+      takes: group.takes.map(take => ({
+        id: take.id,
+        startTime: take.startTime,
+        endTime: take.endTime,
+        parsed: {
+          start: parseTimeToSeconds(take.startTime),
+          end: parseTimeToSeconds(take.endTime)
+        }
+      }))
+    }));
+
+    const debugString = JSON.stringify({
+      videoDuration,
+      contentGroups: debugData
+    }, null, 2);
+
+    navigator.clipboard.writeText(debugString);
+    alert('Debug info copied to clipboard!');
+  }, [contentGroups, videoDuration, parseTimeToSeconds]);
+
   // Calculate progress stats
   const progressStats = useMemo(() => {
     const totalClusters = contentGroups.length;
@@ -194,6 +271,16 @@ export function ClusterTimeline({
             <h2 className="text-2xl font-semibold text-gray-900">Cluster Timeline</h2>
             <p className="text-gray-600">Review and approve the best takes from each content group</p>
           </div>
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={generateDebugInfo}
+            className="gap-2"
+          >
+            <Bug className="w-4 h-4" />
+            Copy Debug Info
+          </Button>
           
           <div className="flex items-center gap-4">
             {/* Progress indicator */}
@@ -451,6 +538,35 @@ export function ClusterTimeline({
                       )}
                     </div>
                   </button>
+                );
+              })}
+            </div>
+            
+            {/* Cluster boundary markers */}
+            <div className="absolute inset-0 pointer-events-none">
+              {contentGroups.map(group => {
+                const startTime = parseTimeToSeconds(group.timeRange.start);
+                const endTime = parseTimeToSeconds(group.timeRange.end);
+                const startLeft = (startTime / videoDuration) * 100;
+                const endLeft = (endTime / videoDuration) * 100;
+                
+                return (
+                  <div key={`boundary-${group.id}`}>
+                    {/* Start boundary line */}
+                    <div
+                      className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-20"
+                      style={{ left: `${startLeft}%` }}
+                    >
+                      <div className="absolute -top-6 -left-6 text-xs text-red-600 whitespace-nowrap">
+                        {group.name}
+                      </div>
+                    </div>
+                    {/* End boundary line */}
+                    <div
+                      className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-20"
+                      style={{ left: `${endLeft}%` }}
+                    />
+                  </div>
                 );
               })}
             </div>

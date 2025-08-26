@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../src/contexts/AuthContext';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -56,11 +57,18 @@ interface JobListProps {
 export function JobList({ onJobSelect, onJobDelete }: JobListProps) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
 
   // Fetch jobs from API
   const fetchJobs = async () => {
     try {
-      const response = await fetch('/api/jobs');
+      const userId = user?.id;
+      if (!userId) {
+        setLoading(false);
+        return;
+      }
+      
+      const response = await fetch(`/api/jobs?userId=${userId}`);
       if (response.ok) {
         const data = await response.json();
         setJobs(data.jobs || []);
@@ -77,7 +85,7 @@ export function JobList({ onJobSelect, onJobDelete }: JobListProps) {
     fetchJobs();
     const interval = setInterval(fetchJobs, 5000); // Poll every 5 seconds
     return () => clearInterval(interval);
-  }, []);
+  }, [user?.id]); // Refresh when user changes
 
   const getStatusColor = (status: string) => {
     switch (status) {

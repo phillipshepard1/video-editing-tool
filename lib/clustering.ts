@@ -28,13 +28,16 @@ export interface ClusterSelection {
 export interface OverlapInfo {
   segmentId: string;
   coveredBy: {
-    type: 'cluster' | 'segment';
+    type: 'cluster' | 'silence' | 'segment';
     id: string;
-    name: string;
+    name?: string;
     timeRange: { start: string; end: string };
   };
   reason: string;
+  resolution?: 'keep_cluster' | 'remove_silence' | 'user_decision';
 }
+
+
 
 // Convert time string or number to seconds
 function parseTime(timeStr: string | number): number {
