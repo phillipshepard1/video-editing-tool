@@ -307,6 +307,58 @@ export function ClusterTimeline({
               </Badge>
             </div>
             
+            {/* Manual test button for debugging */}
+            {contentGroups.length === 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  // Manually create test clusters for the sample video
+                  const testGroups: ContentGroup[] = [{
+                    id: 'cluster-test-1',
+                    name: 'Claude Code Introduction',
+                    description: 'Multiple attempts at introducing Claude Code',
+                    takes: [
+                      {
+                        id: 'take-test-1',
+                        startTime: '00:08',
+                        endTime: '00:29',
+                        duration: 21,
+                        transcript: 'Claude code we I kind of stripped everything away...',
+                        qualityScore: 4,
+                        issues: [{ type: 'delivery', severity: 'medium', description: 'Stumbling, unclear' }],
+                        qualities: [],
+                        confidence: 0.8
+                      },
+                      {
+                        id: 'take-test-2',
+                        startTime: '00:32',
+                        endTime: '00:53',
+                        duration: 21,
+                        transcript: 'Claude code is a tool that helps with video editing...',
+                        qualityScore: 8,
+                        issues: [],
+                        qualities: [{ type: 'clear_delivery', description: 'Clear and complete' }],
+                        confidence: 0.9
+                      }
+                    ],
+                    bestTakeId: 'take-test-2',
+                    reasoning: 'Second take is clearer and more complete',
+                    contentType: 'introduction',
+                    timeRange: { start: '00:08', end: '00:53' },
+                    averageQuality: 6,
+                    confidence: 0.85
+                  }];
+                  
+                  // This would need to be passed up to parent component
+                  console.log('Test clusters created:', testGroups);
+                  alert('Test clusters logged to console. To use them, the parent component needs to be updated.');
+                }}
+              >
+                Load Test Clusters (0:08-0:29, 0:32-0:53)
+              </Button>
+            )}
+            
             {/* Continue button */}
             {canProgressToSilence && (
               <Button onClick={onProgressToSilence} className="flex items-center gap-2">

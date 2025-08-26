@@ -193,26 +193,27 @@ export async function analyzeVideoForClusters(
   });
 
   const clusterPrompt = `
-    Analyze this video ONLY for repeated content clusters (multiple takes).
+    Analyze this video to find ALL repeated content where someone tries to say the same thing multiple times.
     
-    FOCUS ONLY ON FINDING CLUSTERS:
-    - Find segments where the speaker says SIMILAR OR IDENTICAL content multiple times
-    - Look for these specific patterns:
-      * False starts: speaker begins, stops, then restarts with same content
-      * Retakes: phrases like "let's redo that", "let me try that again", "actually..."
-      * Repeated phrases: speaker repeats the same words/sentences
-      * Multiple attempts: trying to say the same thing differently
+    IMPORTANT: Look for ANY of these patterns:
+    1. Someone starts talking, then stops and starts over with similar content
+    2. Multiple attempts at explaining the same concept
+    3. Phrases like "let me try that again", "actually", "wait", followed by similar content
+    4. Any content that is repeated or restated within 90 seconds
+    
+    SPECIFIC INSTRUCTIONS:
+    - Check the time period from 0:00 to 1:00 carefully
+    - If someone speaks from 0:08-0:29 and then again from 0:32-0:53, check if it's similar content
+    - Even if the wording is slightly different, if the INTENT is the same, group them as one cluster
+    - Include the actual words spoken in the transcript field
     
     CLUSTERING RULES:
-    - ONLY group segments that contain actually similar content/words
-    - Group ONLY if attempts occur within 60 seconds of each other
-    - Do NOT group just because segments are close in time
-    - Include brief transcript of what was said (first 100 characters)
+    - Group attempts that are within 90 seconds of each other
+    - Include partial attempts, false starts, and complete takes
+    - If you find NO clusters, still return an empty contentGroups array
     
-    For the example video:
-    - Bad take from 0:08 to 0:29
-    - Good take of the SAME content from 0:32 to 0:53
-    These should be identified as ONE cluster with TWO takes
+    Example: If someone says "Claude code is..." then restarts with "Claude code is a tool that...", 
+    these are TWO TAKES of the same content and should be ONE cluster
     
     Return ONLY a valid JSON object with this EXACT structure:
     {
@@ -280,14 +281,41 @@ export async function analyzeVideoForClusters(
 
     const response = await result.response;
     const text = response.text();
-    const parsed = JSON.parse(text);
+    
+    console.log('[Cluster Analysis] Raw AI response:', text);
+    
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (parseError) {
+      console.error('[Cluster Analysis] Failed to parse AI response:', parseError);
+      console.error('[Cluster Analysis] Raw text:', text);
+      // Return empty result if parsing fails
+      return {
+        contentGroups: [],
+        metadata: {
+          processingTime: Date.now() - startTime,
+          tokenCount: 0,
+          estimatedCost: 0,
+          analysisType: 'clusters-only',
+          error: 'Failed to parse AI response'
+        }
+      };
+    }
 
     const processingTime = Date.now() - startTime;
     const tokenCount = response.usageMetadata?.totalTokenCount || 0;
     const estimatedCost = calculateCost(tokenCount);
+    
+    // Validate and log the content groups
+    const contentGroups = parsed.contentGroups || [];
+    console.log(`[Cluster Analysis] Found ${contentGroups.length} clusters`);
+    if (contentGroups.length > 0) {
+      console.log('[Cluster Analysis] First cluster:', JSON.stringify(contentGroups[0], null, 2));
+    }
 
     return {
-      contentGroups: parsed.contentGroups || [],
+      contentGroups,
       metadata: {
         processingTime,
         tokenCount,
