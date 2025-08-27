@@ -10,6 +10,7 @@ import { FinalReviewPanel } from './FinalReviewPanel';
 import { ContentGroupsPanel } from './ContentGroupsPanel';
 import { ClusterTimeline } from './timeline/ClusterTimeline';
 import { SilenceTimeline } from './timeline/SilenceTimeline';
+import { UnifiedTimeline } from './timeline/UnifiedTimeline';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -55,10 +56,11 @@ export function WorkflowManagerV2({
   const [savedSessionId, setSavedSessionId] = useState<string | null>(null);
   
   // Timeline View state (always enabled now)
-  const [timelineStage, setTimelineStage] = useState<'clusters' | 'silence' | 'final'>('clusters');
+  const [timelineStage, setTimelineStage] = useState<'clusters' | 'silence' | 'final' | 'unified'>('unified');
   const [takeSelections, setTakeSelections] = useState<TakeSelection[]>([]);
   const [contentGroups, setContentGroups] = useState<ContentGroup[]>([]);
   const [silenceSegments, setSilenceSegments] = useState<any[]>([]);
+  const [useUnifiedTimeline, setUseUnifiedTimeline] = useState(true);
 
   // Initialize enhanced analysis and content groups
   useEffect(() => {
@@ -350,6 +352,19 @@ export function WorkflowManagerV2({
 
     setIsSaving(true);
     try {
+      // Use finalSegmentsToRemove if available (from UnifiedTimeline), otherwise use segments
+      const segmentsToSave = finalSegmentsToRemove.length > 0 ? finalSegmentsToRemove : segments;
+      
+      // Ensure clusters and clusterSelections have default values if empty
+      const clustersToSave = clusters.length > 0 ? clusters : [];
+      const selectionsToSave = clusterSelections.length > 0 ? clusterSelections : [];
+      
+      console.log('Saving session with:', {
+        sessionName: sessionName.trim(),
+        segmentsCount: segmentsToSave.length,
+        clustersCount: clustersToSave.length
+      });
+      
       const response = await fetch('/api/sessions', {
         method: 'POST',
         headers: {
@@ -358,13 +373,13 @@ export function WorkflowManagerV2({
         body: JSON.stringify({
           sessionName: sessionName.trim(),
           originalFilename,
-          videoUrl,
+          videoUrl: supabaseUrl || videoUrl, // Use supabase URL if available
           videoDuration,
-          segments,
-          clusters,
-          clusterSelections,
+          segments: segmentsToSave,
+          clusters: clustersToSave,
+          clusterSelections: selectionsToSave,
           filterState,
-          currentStep: timelineStage,
+          currentStep: timelineStage === 'unified' ? 'unified' : timelineStage,
           originalDuration
         }),
       });
@@ -419,76 +434,120 @@ export function WorkflowManagerV2({
 
       {/* Timeline Content - Always Visible */}
         <>
-          {/* Timeline stage indicator */}
-          {timelineStage !== 'final' && (
-            <Card className="p-4 bg-white border-gray-200 shadow-sm mb-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
-                    timelineStage === 'clusters' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
-                  }`}>
-                    <Layers className="w-4 h-4" />
-                    <span className="text-sm font-medium">1. Cluster Timeline</span>
+          {/* Use Unified Timeline by default */}
+          {(timelineStage === 'unified' || useUnifiedTimeline) ? (
+            <div className="h-[calc(100vh-200px)] min-h-[600px]">
+              <UnifiedTimeline
+                segments={finalSegmentsToRemove.length > 0 ? finalSegmentsToRemove : visibleSegments}
+                contentGroups={contentGroups}
+                videoUrl={supabaseUrl || videoUrl}
+                videoDuration={videoDuration}
+                onSegmentUpdate={(updatedSegments) => {
+                  // Convert timeline segments back to EnhancedSegment format
+                  const removeSegments = updatedSegments
+                    .filter(s => s.type === 'remove')
+                    .map(s => ({
+                      id: s.id,
+                      selected: true,
+                      startTime: s.startTime.toString(), // Convert number to string
+                      endTime: s.endTime.toString(), // Convert number to string
+                      duration: s.duration,
+                      reason: s.reason || 'User edited',
+                      confidence: s.confidence || 0.8,
+                      category: (s.category || 'pause') as any, // Use valid category
+                      transcript: ''
+                    } as EnhancedSegment));
+                  setFinalSegmentsToRemove(removeSegments);
+                }}
+                onExport={onExport}
+                videoRef={videoRef}
+                originalFilename={originalFilename}
+                supabaseUrl={supabaseUrl}
+              />
+            </div>
+          ) : (
+            <>
+              {/* Legacy timeline stages - kept for backward compatibility */}
+              {/* Timeline stage indicator */}
+              {timelineStage !== 'final' && (
+                <Card className="p-4 bg-white border-gray-200 shadow-sm mb-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setTimelineStage('unified')}
+                        className="mr-4"
+                      >
+                        Switch to Unified Timeline
+                      </Button>
+                      <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
+                        timelineStage === 'clusters' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        <Layers className="w-4 h-4" />
+                        <span className="text-sm font-medium">1. Cluster Timeline</span>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-gray-400" />
+                      <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
+                        timelineStage === 'silence' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        <VolumeX className="w-4 h-4" />
+                        <span className="text-sm font-medium">2. Silence Timeline</span>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-gray-400" />
+                      <div className={`flex items-center gap-2 px-3 py-1 rounded-full bg-gray-100 text-gray-500`}>
+                        <CheckCircle className="w-4 h-4" />
+                        <span className="text-sm font-medium">3. Final Review</span>
+                      </div>
+                    </div>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-gray-400" />
-                  <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
-                    timelineStage === 'silence' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'
-                  }`}>
-                    <VolumeX className="w-4 h-4" />
-                    <span className="text-sm font-medium">2. Silence Timeline</span>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-gray-400" />
-                  <div className={`flex items-center gap-2 px-3 py-1 rounded-full bg-gray-100 text-gray-500`}>
-                    <CheckCircle className="w-4 h-4" />
-                    <span className="text-sm font-medium">3. Final Review</span>
-                  </div>
+                </Card>
+              )}
+              
+              {/* Stage content */}
+              {timelineStage === 'clusters' && (
+                <div className="h-[calc(100vh-200px)] min-h-[600px]">
+                  <ClusterTimeline
+                    contentGroups={getTimelineCompatibleGroups}
+                    videoUrl={supabaseUrl || videoUrl}
+                    videoDuration={videoDuration}
+                    onClusterDecision={handleClusterDecision}
+                    onProgressToSilence={handleProgressToSilence}
+                    originalFilename={originalFilename}
+                  />
                 </div>
-              </div>
-            </Card>
-          )}
-          
-          {/* Stage content */}
-          {timelineStage === 'clusters' && (
-            <div className="h-[calc(100vh-200px)] min-h-[600px]">
-              <ClusterTimeline
-                contentGroups={getTimelineCompatibleGroups}
-                videoUrl={supabaseUrl || videoUrl}
-                videoDuration={videoDuration}
-                onClusterDecision={handleClusterDecision}
-                onProgressToSilence={handleProgressToSilence}
-                originalFilename={originalFilename}
-              />
-            </div>
-          )}
-          
-          {timelineStage === 'silence' && (
-            <div className="h-[calc(100vh-200px)] min-h-[600px]">
-              <SilenceTimeline
-                videoUrl={supabaseUrl || videoUrl}
-                videoDuration={videoDuration}
-                onSilenceDecisions={handleSilenceDecisions}
-                onProgressToFinal={handleProgressToFinal}
-                onBack={handleBackToClusters}
-                originalFilename={originalFilename}
-                initialSilenceSegments={silenceSegments}
-              />
-            </div>
-          )}
-          
-          {timelineStage === 'final' && (
-            <FinalReviewPanel
-              sessionId={savedSessionId || undefined}
-              finalSegmentsToRemove={finalSegmentsToRemove}
-              clusters={clusters}
-              clusterSelections={clusterSelections}
-              originalDuration={originalDuration}
-              finalDuration={originalDuration - finalSegmentsToRemove.reduce((sum, s) => sum + s.duration, 0)}
-              onExport={onExport}
-              videoUrl={videoUrl}
-              videoRef={videoRef}
-              videoDuration={videoDuration}
-              supabaseUrl={supabaseUrl}
-            />
+              )}
+              
+              {timelineStage === 'silence' && (
+                <div className="h-[calc(100vh-200px)] min-h-[600px]">
+                  <SilenceTimeline
+                    videoUrl={supabaseUrl || videoUrl}
+                    videoDuration={videoDuration}
+                    onSilenceDecisions={handleSilenceDecisions}
+                    onProgressToFinal={handleProgressToFinal}
+                    onBack={handleBackToClusters}
+                    originalFilename={originalFilename}
+                    initialSilenceSegments={silenceSegments}
+                  />
+                </div>
+              )}
+              
+              {timelineStage === 'final' && (
+                <FinalReviewPanel
+                  sessionId={savedSessionId || undefined}
+                  finalSegmentsToRemove={finalSegmentsToRemove}
+                  clusters={clusters}
+                  clusterSelections={clusterSelections}
+                  originalDuration={originalDuration}
+                  finalDuration={originalDuration - finalSegmentsToRemove.reduce((sum, s) => sum + s.duration, 0)}
+                  onExport={onExport}
+                  videoUrl={videoUrl}
+                  videoRef={videoRef}
+                  videoDuration={videoDuration}
+                  supabaseUrl={supabaseUrl}
+                />
+              )}
+            </>
           )}
         </>
 

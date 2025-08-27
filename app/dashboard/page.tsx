@@ -153,20 +153,95 @@ export default function DashboardPage() {
     fetchRecentProjects();
   }, [refreshJobList, user?.id]); // Refresh when job list updates or user changes
 
-  // Stats (in production, these would be calculated from user data)
-  const stats = {
-    totalVideos: recentProjects.length,
-    totalTimeSaved: '10:15',
-    avgEditingTime: '2:30',
-    storageUsed: '1.2 GB'
-  };
+  // Calculate real stats from user data
+  const [stats, setStats] = useState({
+    totalVideos: 0,
+    totalTimeSaved: '0:00',
+    avgEditingTime: '0:00',
+    storageUsed: '0 MB'
+  });
+
+  // Fetch and calculate user stats
+  useEffect(() => {
+    const fetchUserStats = async () => {
+      try {
+        const userId = user?.id;
+        if (!userId) return;
+
+        // Fetch all completed jobs for stats
+        const response = await fetch(`/api/jobs?status=completed&userId=${userId}`);
+        if (response.ok) {
+          const data = await response.json();
+          const jobs = data.jobs || [];
+          
+          // Calculate total time saved
+          let totalTimeSavedSeconds = 0;
+          let totalProcessingTime = 0;
+          let totalStorageBytes = 0;
+          
+          jobs.forEach((job: any) => {
+            const assembleData = job.result_data?.assemble_timeline;
+            const geminiData = job.result_data?.gemini_processing;
+            
+            // Calculate time saved
+            if (assembleData?.timeReduction) {
+              totalTimeSavedSeconds += assembleData.timeReduction;
+            } else if (geminiData?.analysis?.summary?.timeRemoved) {
+              totalTimeSavedSeconds += geminiData.analysis.summary.timeRemoved;
+            }
+            
+            // Calculate processing time
+            if (job.created_at && job.completed_at) {
+              const startTime = new Date(job.created_at).getTime();
+              const endTime = new Date(job.completed_at).getTime();
+              totalProcessingTime += (endTime - startTime) / 1000; // Convert to seconds
+            }
+            
+            // Calculate storage used
+            if (job.metadata?.fileSize) {
+              totalStorageBytes += job.metadata.fileSize;
+            }
+          });
+          
+          // Format total time saved
+          const totalMinutes = Math.floor(totalTimeSavedSeconds / 60);
+          const totalSeconds = Math.floor(totalTimeSavedSeconds % 60);
+          const formattedTimeSaved = totalMinutes > 0 
+            ? `${totalMinutes}:${totalSeconds.toString().padStart(2, '0')}` 
+            : `${totalSeconds}s`;
+          
+          // Calculate average editing time
+          const avgProcessingSeconds = jobs.length > 0 ? totalProcessingTime / jobs.length : 0;
+          const avgMinutes = Math.floor(avgProcessingSeconds / 60);
+          const avgSeconds = Math.floor(avgProcessingSeconds % 60);
+          const formattedAvgTime = avgMinutes > 0
+            ? `${avgMinutes}:${avgSeconds.toString().padStart(2, '0')}`
+            : `${avgSeconds}s`;
+          
+          // Format storage
+          const formattedStorage = formatFileSize(totalStorageBytes);
+          
+          setStats({
+            totalVideos: jobs.length,
+            totalTimeSaved: formattedTimeSaved,
+            avgEditingTime: formattedAvgTime,
+            storageUsed: formattedStorage
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch user stats:', error);
+      }
+    };
+    
+    fetchUserStats();
+  }, [refreshJobList, user?.id]);
 
   // Get user display name
   const displayName = user?.user_metadata?.full_name || 
                      user?.email?.split('@')[0] || 
                      'there';
 
-  // Create video URL when file changes
+  // Create video URL when file changes and get duration
   useEffect(() => {
     if (file) {
       let url: string;
@@ -179,6 +254,14 @@ export default function DashboardPage() {
       }
       
       setVideoUrl(url);
+      
+      // Get video duration
+      const tempVideo = document.createElement('video');
+      tempVideo.src = url;
+      tempVideo.onloadedmetadata = () => {
+        setVideoDuration(tempVideo.duration);
+      };
+      
       return () => {
         URL.revokeObjectURL(url);
       };
@@ -571,6 +654,19 @@ export default function DashboardPage() {
             </p>
           </div>
 
+          {/* Error Display */}
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-700">{error}</p>
+              <button 
+                onClick={() => setError(null)}
+                className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {/* Stats Grid */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 border border-gray-200 shadow-lg">
@@ -650,6 +746,13 @@ export default function DashboardPage() {
                   key={refreshJobList}
                   onJobSelect={(job) => {
                     console.log('Job selected for review:', job);
+                    
+                    // Only allow review for completed jobs with data
+                    if (job.status !== 'completed' || !job.result_data) {
+                      setError('This job is not ready for review yet');
+                      return;
+                    }
+                    
                     setCurrentJob(job);
                     
                     // Load the job's analysis data from either gemini_processing or assemble_timeline
@@ -668,6 +771,7 @@ export default function DashboardPage() {
                       setAnalysis(geminiData.analysis);
                       setView('review');
                     } else {
+                      setError('No analysis data found in job. Please try processing again.');
                       console.error('No analysis data found in job');
                     }
                   }}
