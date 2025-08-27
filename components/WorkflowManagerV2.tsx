@@ -364,7 +364,7 @@ export function WorkflowManagerV2({
           clusters,
           clusterSelections,
           filterState,
-          currentStep,
+          currentStep: timelineStage,
           originalDuration
         }),
       });
