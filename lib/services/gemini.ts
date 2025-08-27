@@ -163,6 +163,71 @@ function calculateCost(tokenCount: number): number {
   return (tokenCount / 1000000) * costPerMillion;
 }
 
+// Enhanced timestamp parsing for better accuracy
+export function parseTimeToSeconds(timeStr: string): number {
+  if (!timeStr) return 0;
+  
+  // Remove any whitespace
+  timeStr = timeStr.trim();
+  
+  // Handle decimal seconds format (MM:SS.S)
+  if (timeStr.includes('.')) {
+    const parts = timeStr.split(':');
+    if (parts.length === 2) {
+      // MM:SS.S format
+      const minutes = parseInt(parts[0]) || 0;
+      const seconds = parseFloat(parts[1]) || 0;
+      return minutes * 60 + seconds;
+    } else if (parts.length === 3) {
+      // HH:MM:SS.S format
+      const hours = parseInt(parts[0]) || 0;
+      const minutes = parseInt(parts[1]) || 0;
+      const seconds = parseFloat(parts[2]) || 0;
+      return hours * 3600 + minutes * 60 + seconds;
+    }
+  }
+  
+  // Handle standard formats
+  const parts = timeStr.split(':');
+  
+  if (parts.length === 2) {
+    // MM:SS format
+    const minutes = parseInt(parts[0]) || 0;
+    const seconds = parseFloat(parts[1]) || 0;
+    return minutes * 60 + seconds;
+  } else if (parts.length === 3) {
+    // Could be HH:MM:SS or MM:SS:FF (frames)
+    const first = parseInt(parts[0]) || 0;
+    const second = parseInt(parts[1]) || 0;
+    const third = parseFloat(parts[2]) || 0;
+    
+    // If first number is >= 60, it's likely seconds, not minutes
+    // This handles edge cases like "83:45" which should be 83 seconds + 45 frames
+    if (first >= 60) {
+      // Treat as seconds:frames
+      return first + (second / 30); // Assuming 30fps
+    }
+    
+    // If third number is > 60, it's frames
+    if (third > 60) {
+      // MM:SS:FF format
+      return first * 60 + second + (third / 30); // Convert frames to seconds (30fps)
+    }
+    
+    // Standard HH:MM:SS or MM:SS:FF
+    if (first < 24) {
+      // Likely MM:SS:FF for short videos
+      return first * 60 + second + (third / 100); // Centiseconds
+    }
+    
+    // HH:MM:SS for longer videos
+    return first * 3600 + second * 60 + third;
+  }
+  
+  // Simple number format
+  return parseFloat(timeStr) || 0;
+}
+
 // Get file status
 export async function getFileStatus(fileUri: string): Promise<any> {
   const fileId = fileUri.split('/').pop();
@@ -184,8 +249,8 @@ export async function analyzeVideoForClusters(
   const model = genAI.getGenerativeModel({
     model: 'gemini-2.5-pro',
     generationConfig: {
-      temperature: 0.2,
-      topP: 0.8,
+      temperature: 0.3, // Slightly higher for better understanding
+      topP: 0.9,
       topK: 40,
       maxOutputTokens: 8192,
       responseMimeType: 'application/json',
@@ -193,27 +258,39 @@ export async function analyzeVideoForClusters(
   });
 
   const clusterPrompt = `
-    Analyze this video to find ALL repeated content where someone tries to say the same thing multiple times.
+    TASK: Find ALL instances where someone attempts to deliver the same content multiple times (multiple "takes").
     
-    IMPORTANT: Look for ANY of these patterns:
-    1. Someone starts talking, then stops and starts over with similar content
-    2. Multiple attempts at explaining the same concept
-    3. Phrases like "let me try that again", "actually", "wait", followed by similar content
-    4. Any content that is repeated or restated within 90 seconds
+    WHAT TO LOOK FOR:
+    1. FALSE STARTS: Speaker begins, then stops and restarts the same topic
+       Example: "Today we're going to... actually, let me start over. Today we're discussing..."
     
-    SPECIFIC INSTRUCTIONS:
-    - Check the time period from 0:00 to 1:00 carefully
-    - If someone speaks from 0:08-0:29 and then again from 0:32-0:53, check if it's similar content
-    - Even if the wording is slightly different, if the INTENT is the same, group them as one cluster
-    - Include the actual words spoken in the transcript field
+    2. MULTIPLE ATTEMPTS: Same information delivered 2+ times with variations
+       Example: First take: "The API allows you to..." (stumbles)
+                Second take: "The API enables developers to..." (clearer)
     
-    CLUSTERING RULES:
-    - Group attempts that are within 90 seconds of each other
-    - Include partial attempts, false starts, and complete takes
-    - If you find NO clusters, still return an empty contentGroups array
+    3. RETAKES INDICATORS: Look for verbal cues like:
+       - "Let me try that again"
+       - "Actually, wait"
+       - "Sorry, let me rephrase"
+       - "OK, take two"
+       - Sudden stops followed by restarts
     
-    Example: If someone says "Claude code is..." then restarts with "Claude code is a tool that...", 
-    these are TWO TAKES of the same content and should be ONE cluster
+    4. CONTENT REPETITION: Same core message with different wording
+       - Must be within 2 minutes of each other
+       - Look for similar intent even if words differ
+    
+    ANALYSIS INSTRUCTIONS:
+    - Scan the ENTIRE video from start to finish
+    - Pay special attention to the first 2 minutes (often has most retakes)
+    - Group all attempts at the same content into ONE cluster
+    - Include partial attempts, not just complete ones
+    - Capture the actual spoken words in transcript field (first 150 chars)
+    
+    CRITICAL RULES:
+    - Each cluster = one piece of content with multiple attempts
+    - Takes within a cluster should be attempts at the SAME message
+    - If no clusters found, return empty contentGroups array
+    - Be thorough - don't miss subtle retakes
     
     Return ONLY a valid JSON object with this EXACT structure:
     {
@@ -337,47 +414,68 @@ export async function analyzeVideoForSilence(
   const model = genAI.getGenerativeModel({
     model: 'gemini-2.5-pro',
     generationConfig: {
-      temperature: 0.1, // Very low temperature for consistent detection
+      temperature: 0.05, // Even lower for precise detection
       topP: 0.8,
-      topK: 40,
+      topK: 20,
       maxOutputTokens: 8192,
       responseMimeType: 'application/json',
     },
   });
 
   const silencePrompt = `
-    Analyze this video ONLY for silence detection.
+    TASK: Detect ALL silence periods in this video with precise timestamps.
     
-    FOCUS ONLY ON FINDING SILENCES:
-    - Detect ALL silences/pauses longer than 2 seconds
-    - Include dead air (no speech at all)
-    - Include long pauses between words or sentences
-    - Be VERY precise about start and end timestamps
-    - Measure silence duration accurately
+    SILENCE DEFINITION:
+    - ANY period with NO speech/talking for 2+ seconds
+    - Dead air between sentences
+    - Long pauses mid-sentence
+    - Beginning/ending silence
+    - Gaps between topics
+    
+    DETECTION RULES:
+    1. Mark the EXACT moment speech stops (startTime)
+    2. Mark the EXACT moment speech resumes (endTime)
+    3. Calculate duration = endTime - startTime
+    4. Only report if duration >= 2.0 seconds
+    5. Round timestamps to nearest 0.1 second for accuracy
+    
+    TIMESTAMP FORMAT:
+    - Use MM:SS.S format (e.g., "00:05.3", "01:23.7")
+    - For videos under 1 hour, never use HH:MM:SS
+    - Be precise to deciseconds (0.1 second)
+    
+    IMPORTANT:
+    - Scan ENTIRE video from 00:00.0 to end
+    - Don't merge adjacent silences - report each separately
+    - Include silence at video start/end if >= 2 seconds
+    - Focus ONLY on silence, ignore speech content
     
     Return ONLY a valid JSON object with this EXACT structure:
     {
       "segments": [
         {
-          "startTime": "00:05",
-          "endTime": "00:08",
-          "duration": 3,
-          "reason": "3-second silence",
-          "category": "silence",
+          "startTime": "00:05.0",
+          "endTime": "00:08.2",
+          "duration": 3.2,
+          "reason": "3.2-second silence between introduction and main content",
+          "category": "pause",
           "confidence": 0.95
         }
       ],
       "metadata": {
         "totalSilences": 1,
-        "totalSilenceDuration": 3
+        "totalSilenceDuration": 3.2,
+        "videoScanned": true,
+        "scanRange": "full"
       }
     }
     
     CRITICAL:
-    - Use MM:SS format for timestamps (e.g., "01:23" not "83")
-    - Be extremely accurate with timestamp alignment
-    - Only include silences longer than 2 seconds
-    - Focus ONLY on silence detection, ignore content clusters
+    - Timestamps MUST align with actual silence in video
+    - Duration MUST equal endTime - startTime
+    - Report ALL silences >= 2.0 seconds
+    - Be extre
+    mely precise with timing
   `;
 
   const startTime = Date.now();
@@ -395,14 +493,48 @@ export async function analyzeVideoForSilence(
 
     const response = await result.response;
     const text = response.text();
-    const parsed = JSON.parse(text);
+    
+    console.log('[Silence Detection] Raw AI response:', text);
+    
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (parseError) {
+      console.error('[Silence Detection] Failed to parse AI response:', parseError);
+      console.error('[Silence Detection] Raw text:', text);
+      return {
+        segments: [],
+        metadata: {
+          processingTime: Date.now() - startTime,
+          tokenCount: 0,
+          estimatedCost: 0,
+          analysisType: 'silence-only',
+          error: 'Failed to parse AI response'
+        }
+      };
+    }
 
     const processingTime = Date.now() - startTime;
     const tokenCount = response.usageMetadata?.totalTokenCount || 0;
     const estimatedCost = calculateCost(tokenCount);
+    
+    // Convert timestamps to seconds for consistency
+    const segments = (parsed.segments || []).map((seg: any) => ({
+      ...seg,
+      startTimeSeconds: parseTimeToSeconds(seg.startTime),
+      endTimeSeconds: parseTimeToSeconds(seg.endTime),
+      // Keep original format for display
+      originalStart: seg.startTime,
+      originalEnd: seg.endTime
+    }));
+    
+    console.log(`[Silence Detection] Found ${segments.length} silence segments`);
+    if (segments.length > 0) {
+      console.log('[Silence Detection] First segment:', segments[0]);
+    }
 
     return {
-      segments: parsed.segments || [],
+      segments,
       metadata: {
         processingTime,
         tokenCount,

@@ -159,15 +159,30 @@ export interface ChillinProject {
   };
 }
 
+// Import the improved parsing function from gemini service
+import { parseTimeToSeconds as geminiParseTime } from './gemini';
+
 // Convert segments to remove into segments to keep
 export function calculateKeeperSegments(
   segmentsToRemove: EnhancedSegment[],
   videoDuration: number
 ): { start: number; end: number }[] {
+  // Use the improved parsing function for better accuracy
+  const parseTime = (timeStr: string | number): number => {
+    if (typeof timeStr === 'number') return timeStr;
+    
+    // First try the Gemini parser for more formats
+    const parsed = geminiParseTime(timeStr);
+    if (!isNaN(parsed)) return parsed;
+    
+    // Fallback to local parser
+    return parseTimeToSeconds(timeStr);
+  };
+  
   // Sort segments by start time
   const sorted = [...segmentsToRemove].sort((a, b) => {
-    const aStart = parseTimeToSeconds(a.startTime);
-    const bStart = parseTimeToSeconds(b.startTime);
+    const aStart = parseTime(a.startTime);
+    const bStart = parseTime(b.startTime);
     return aStart - bStart;
   });
 
@@ -175,8 +190,8 @@ export function calculateKeeperSegments(
   let lastEnd = 0;
 
   for (const segment of sorted) {
-    const segmentStart = parseTimeToSeconds(segment.startTime);
-    const segmentEnd = parseTimeToSeconds(segment.endTime);
+    const segmentStart = parseTime(segment.startTime);
+    const segmentEnd = parseTime(segment.endTime);
 
     // If there's a gap between last removed segment and this one, keep it
     if (segmentStart > lastEnd) {

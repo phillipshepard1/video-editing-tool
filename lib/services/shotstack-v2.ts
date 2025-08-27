@@ -4,6 +4,7 @@
  */
 
 import { EnhancedSegment } from '@/lib/types/segments';
+import { parseTimeToSeconds as geminiParseTime } from './gemini';
 
 const SHOTSTACK_API_URL = 'https://api.shotstack.io';
 
@@ -150,23 +151,16 @@ function normalizeFPS(fps: number): number {
   return closest;
 }
 
-function parseTimeToSeconds(timeStr: string): number {
+function parseTimeToSeconds(timeStr: string | number): number {
+  if (typeof timeStr === 'number') return timeStr;
   if (!timeStr) return 0;
   
-  const parts = timeStr.split(':');
-  if (parts.length === 2) {
-    return parseInt(parts[0]) * 60 + parseFloat(parts[1]);
-  } else if (parts.length === 3) {
-    const [first, second, third] = parts.map(Number);
-    if (third > 60) {
-      return first * 60 + second + (third / 100);
-    }
-    if (first < 60) {
-      return first * 60 + second + (third / 100);
-    }
-    return first * 3600 + second * 60 + third;
-  }
+  // Use the improved Gemini parser which handles more formats
+  // including decimal seconds (MM:SS.S) for better accuracy
+  const parsed = geminiParseTime(timeStr);
+  if (!isNaN(parsed)) return parsed;
   
+  // Fallback to simple parsing if Gemini parser fails
   return parseFloat(timeStr) || 0;
 }
 

@@ -5,6 +5,7 @@
  */
 
 import { EnhancedSegment } from '@/lib/types/segments';
+import { parseTimeToSeconds as geminiParseTime } from './gemini';
 
 // Shotstack API configuration
 const SHOTSTACK_API_URL = 'https://api.shotstack.io';
@@ -176,39 +177,18 @@ export function buildShotstackTimeline(
 }
 
 /**
- * Parse time string to seconds
+ * Parse time string to seconds - uses improved Gemini parser
  */
-function parseTimeToSeconds(timeStr: string): number {
+function parseTimeToSeconds(timeStr: string | number): number {
+  if (typeof timeStr === 'number') return timeStr;
   if (!timeStr) return 0;
   
-  const parts = timeStr.split(':');
+  // Use the improved Gemini parser which handles more formats
+  // including decimal seconds (MM:SS.S) for better accuracy
+  const parsed = geminiParseTime(timeStr);
+  if (!isNaN(parsed)) return parsed;
   
-  if (parts.length === 2) {
-    // MM:SS format
-    const [minutes, seconds] = parts;
-    return parseInt(minutes) * 60 + parseFloat(seconds);
-  } else if (parts.length === 3) {
-    // HH:MM:SS or MM:SS:FF format
-    const [first, second, third] = parts;
-    const firstNum = parseInt(first);
-    const secondNum = parseInt(second);
-    const thirdNum = parseFloat(third);
-    
-    // If third number is > 60, it's likely frames
-    if (thirdNum > 60) {
-      // MM:SS:FF format
-      return firstNum * 60 + secondNum + (thirdNum / 100);
-    }
-    
-    // If first number is < 60, assume MM:SS:FF
-    if (firstNum < 60) {
-      return firstNum * 60 + secondNum + (thirdNum / 100);
-    }
-    
-    // Otherwise treat as HH:MM:SS
-    return firstNum * 3600 + secondNum * 60 + thirdNum;
-  }
-  
+  // Fallback to simple parsing if Gemini parser fails
   return parseFloat(timeStr) || 0;
 }
 
