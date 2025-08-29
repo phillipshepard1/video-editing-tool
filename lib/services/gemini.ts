@@ -59,7 +59,7 @@ export async function analyzeVideo(
   const model = genAI.getGenerativeModel({
     model: 'gemini-2.5-pro', // Using Gemini 2.5 Pro for best quality analysis
     generationConfig: {
-      temperature: 0.3,
+      temperature: 0.1, // Lower temperature for more consistent results matching AI Studio
       topP: 0.8,
       topK: 40,
       maxOutputTokens: 8192,
@@ -67,7 +67,29 @@ export async function analyzeVideo(
     },
   });
 
-  const analysisPrompt = `
+  // Use the custom prompt directly if provided, otherwise use default
+  const analysisPrompt = prompt && prompt.trim() ? 
+    `${prompt}
+    
+    IMPORTANT: Return your findings in this JSON format:
+    {
+      "segmentsToRemove": [
+        {
+          "startTime": "MM:SS",
+          "endTime": "MM:SS",
+          "duration": number (in seconds),
+          "reason": "description",
+          "category": "pause" or "filler" or "redundant" or "off-topic" or "technical",
+          "confidence": 0.0-1.0
+        }
+      ],
+      "summary": {
+        "originalDuration": number,
+        "finalDuration": number,
+        "timeRemoved": number,
+        "segmentCount": number
+      }
+    }` : `
     Analyze this video for content that should be REMOVED in a rough cut.
     
     Focus on identifying:
@@ -102,9 +124,6 @@ export async function analyzeVideo(
       "category": "pause" or "filler" or "redundant" or "off-topic" or "technical",
       "confidence": 0.0-1.0
     }
-    
-    Additional custom instructions:
-    ${prompt}
     
     Return ONLY a valid JSON object with this structure:
     {
@@ -614,6 +633,171 @@ export async function analyzeVideoWithTakes(
     console.error('Combined analysis error:', error);
     throw new Error('Failed to perform combined analysis');
   }
+}
+
+// New function for AI Studio-compatible analysis
+export async function analyzeVideoAIStudioMode(
+  fileUri: string,
+  customPrompt: string
+): Promise<{
+  editingErrors: Array<{
+    flawedTakeStart: string;
+    successfulRetakeStart: string;
+    description: string;
+  }>;
+  silences: Array<{
+    startTime: string;
+    endTime: string;
+    duration: number;
+  }>;
+  rawResponse: string;
+}> {
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-2.5-pro',
+    generationConfig: {
+      temperature: 0.1, // Low temperature for consistent timestamps
+      topP: 0.95,
+      topK: 40,
+      maxOutputTokens: 8192,
+    },
+  });
+
+  console.log('[AI Studio Mode] Starting analysis with custom prompt');
+
+  try {
+    const result = await model.generateContent([
+      {
+        fileData: {
+          mimeType: 'video/mp4',
+          fileUri: fileUri,
+        },
+      },
+      { text: customPrompt },
+    ]);
+
+    const response = await result.response;
+    const text = response.text();
+    
+    console.log('[AI Studio Mode] Raw response:', text);
+
+    // Parse the text response to extract timestamps
+    const editingErrors: Array<{
+      flawedTakeStart: string;
+      successfulRetakeStart: string;  
+      description: string;
+    }> = [];
+    
+    const silences: Array<{
+      startTime: string;
+      endTime: string;
+      duration: number;
+    }> = [];
+
+    // Parse editing errors section
+    const errorSection = text.match(/Editing Errors Found[\s\S]*?(?=Extended Silences Found|$)/);
+    if (errorSection) {
+      const errorMatches = errorSection[0].matchAll(/Error Event \d+:[\s\S]*?Start of Flawed Take: ([\d:]+)[\s\S]*?Start of Successful Re-take: ([\d:]+)[\s\S]*?Description: ([^\n]+)/g);
+      for (const match of errorMatches) {
+        editingErrors.push({
+          flawedTakeStart: match[1],
+          successfulRetakeStart: match[2],
+          description: match[3]
+        });
+      }
+    }
+
+    // Parse silences section
+    const silenceSection = text.match(/Extended Silences Found[\s\S]*$/);
+    if (silenceSection) {
+      const silenceMatches = silenceSection[0].matchAll(/Silence Event \d+:[\s\S]*?Start Time: ([\d:]+)[\s\S]*?End Time: ([\d:]+)[\s\S]*?Duration: (\d+)/g);
+      for (const match of silenceMatches) {
+        silences.push({
+          startTime: match[1],
+          endTime: match[2],
+          duration: parseInt(match[3])
+        });
+      }
+    }
+
+    console.log(`[AI Studio Mode] Found ${editingErrors.length} editing errors and ${silences.length} silences`);
+
+    return {
+      editingErrors,
+      silences,
+      rawResponse: text
+    };
+  } catch (error) {
+    console.error('[AI Studio Mode] Analysis error:', error);
+    throw new Error('Failed to analyze video in AI Studio mode');
+  }
+}
+
+// Convert AI Studio results to standard format
+export function convertAIStudioToStandardFormat(
+  aiStudioResult: {
+    editingErrors: Array<{
+      flawedTakeStart: string;
+      successfulRetakeStart: string;
+      description: string;
+    }>;
+    silences: Array<{
+      startTime: string;
+      endTime: string;
+      duration: number;
+    }>;
+  },
+  videoDuration: number
+): AnalysisResult {
+  const segmentsToRemove: VideoSegment[] = [];
+
+  // Convert editing errors to segments to remove
+  aiStudioResult.editingErrors.forEach((error, index) => {
+    const startTime = parseTimeToSeconds(error.flawedTakeStart);
+    const endTime = parseTimeToSeconds(error.successfulRetakeStart);
+    
+    segmentsToRemove.push({
+      startTime: error.flawedTakeStart,
+      endTime: error.successfulRetakeStart,
+      duration: endTime - startTime,
+      reason: error.description,
+      category: 'redundant',
+      confidence: 0.9
+    });
+  });
+
+  // Add silence segments
+  aiStudioResult.silences.forEach((silence) => {
+    segmentsToRemove.push({
+      startTime: silence.startTime,
+      endTime: silence.endTime,
+      duration: silence.duration,
+      reason: `${silence.duration} second silence`,
+      category: 'pause',
+      confidence: 0.95
+    });
+  });
+
+  // Sort by start time
+  segmentsToRemove.sort((a, b) => 
+    parseTimeToSeconds(a.startTime) - parseTimeToSeconds(b.startTime)
+  );
+
+  const totalTimeRemoved = segmentsToRemove.reduce((sum, seg) => sum + seg.duration, 0);
+
+  return {
+    segmentsToRemove,
+    summary: {
+      originalDuration: videoDuration,
+      finalDuration: videoDuration - totalTimeRemoved,
+      timeRemoved: totalTimeRemoved,
+      segmentCount: segmentsToRemove.length
+    },
+    metadata: {
+      processingTime: 0,
+      tokenCount: 0,
+      estimatedCost: 0
+    }
+  };
 }
 
 // Delete file from Gemini (cleanup)
