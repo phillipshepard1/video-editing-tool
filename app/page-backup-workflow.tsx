@@ -348,8 +348,7 @@ export default function Home() {
   // Play/Pause toggle with promise handling
   const togglePlayPause = async () => {
     console.log('togglePlayPause called');
-    console.log('videoRef.current:', videoRef.current);
-    console.log('video paused:', videoRef.current?.paused);
+ 
     
     if (!videoRef.current) {
       console.error('No video ref available');
